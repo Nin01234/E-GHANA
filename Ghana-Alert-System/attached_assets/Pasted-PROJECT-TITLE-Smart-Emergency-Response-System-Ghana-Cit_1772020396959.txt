@@ -1,0 +1,153 @@
+PROJECT TITLE
+Smart Emergency Response System — Ghana (Citizen Mobile App)
+
+SHORT DESCRIPTION
+Build a production-ready, secure, and user-centred mobile application (Android + iOS) for citizens in Ghana to report emergencies, trigger instant alerts (panic/trigger button), record and upload multimedia evidence (photo, video, audio), share real-time GPS location with precise timestamp, and route incidents to the correct Ghana security agencies. The app must support verified identity (Ghana Card/NIA workflows), face recognition (with liveness checks), anti-prank measures, offline-first reporting, and legal compliance with the Ghana Data Protection Act (Act 843).
+
+OFFICIAL GHANA EMERGENCY NUMBERS (TO BE BUILT-IN & PROMINENT)
+- Unified Emergency Number: 112 (primary).  
+- Police: 191 (and 18555 for some networks).  
+- Fire Service: 192.  
+- Ambulance: 193.  
+(These numbers should be visible as quick-dial buttons in the app and used for fallback call flows.)
+
+PLATFORMS & TECH STACK
+- Preferred: Native Android (Kotlin + Jetpack Compose) and native iOS (Swift + SwiftUI).
+- Acceptable alternative: Flutter (Dart) with platform-specific native modules for biometric, background location, and streaming.
+- Backend: REST + WebSockets (OpenAPI spec), scalable microservices for AI models (face match, audio classification, fraud detection), media storage (resumable uploads), and event/message broker for real-time updates.
+- Push: FCM (Android) & APNs (iOS).
+- Optional: Integrate Ghana NIA / verified identity providers via secure API for Ghana Card verification; if unavailable provide secure manual/ocr fallback.
+
+KEY UX PRINCIPLES
+- Emergency-first home screen: one large “REPORT / PANIC” button, language selector (English, Twi, Ga, Ewe), and quick call buttons for 112 / 191 / 192 / 193.
+- Large touch targets, low-literacy flows, readable typography, WCAG AA contrast, dark/light modes.
+- Onboarding: 3 screens max (skippable). Show how to trigger silent panic mode, allow location, and record media.
+
+CRITICAL FEATURES (IMPLEMENT ALL)
+
+1) QUICK EMERGENCY REPORT (PRIMARY FLOW)
+- Big single-tap REPORT button. Choices: Police, Fire, Medical, Other (auto-classify if user presses camera or speaks).
+- Mandatory auto-attach: current GPS coordinates, accuracy radius (meters), device timestamp (yyyy-mm-ddTHH:MM:SSZ), deviceId/fingerprint.
+- Allow attachment of photos (multiple), short video clip (30–60s), continuous audio recording for incident duration (or background audio in silent mode).
+- Optional live low-latency stream snippet (10–30s) to command center if bandwidth permits (with immediate resume/flush to cloud).
+- Allow user to choose identity level: Anonymous / Device-verified / Ghana Card verified.
+
+2) PANIC / TRIGGER ALERT SYSTEM (MUST HAVE)
+- One-tap panic + long-press (3s) + optional physical button mapping (power or volume double-press) triggers silent or loud alert modes.
+- Silent panic mode: no UI feedback, send encrypted packet (GPS + last N seconds audio + optional photo) and start silent background recording & discreet location updates every 5–10 seconds for a configurable window (default 10 mins).
+- Loud panic mode: audible alarm + immediate voice/video upload + open push to responders.
+- Lock-screen panic trigger: allow activation from lock screen with consent.
+- Smart triggers: detect sudden shake patterns + power button combo and voice keyword triggers (local wakeword “help me”); false-trigger mitigation heuristics.
+
+3) REAL GPS LOCATION + TIMESTAMPING (MUST HAVE)
+- Accurate lat/lon + provider (GPS/Wi-Fi/Cell) + accuracy radius (meters) + timestamp in UTC and local time zone, and a human-friendly formatted time shown to user.
+- Continuous location linking: store last N location points (N configurable, default last 60 seconds) and send as breadcrumb trail.
+- Attach a small map snapshot (PNG) at moment of report with geo-fence visual.
+- Provide a “Share live location” toggle for the active incident to show responder.
+
+4) FACE RECOGNITION & ID VERIFICATION
+- On-device face detection; optional server-side face recognition for high-confidence matches.
+- Ghana Card OCR (user uploads Ghana Card image) + face match between selfie and card image. Provide confidence score and liveness detection to prevent spoofing.
+- Use secure verification providers (NIA integration or third-party Ghana-specific providers) where available; if not available, provide secure manual review flow in the agency dashboard.
+- Respect user consent: explicit consent screen before any face matching.
+
+5) AUDIO RECORDING & ANALYSIS
+- Start continuous audio capture automatically on panic or report; save locally encrypted and stream/resume upload when possible.
+- On-device audio classification for critical events (scream detection, gunshot detection, fire alarm) to help auto-prioritize.
+- Audio fingerprint & sample hashing for tamper-evidence.
+
+6) MULTIMEDIA & STREAMING
+- Resumable chunked uploads for photo/video/audio (support for intermittent connectivity).
+- Adaptive quality modes: low / med / high (auto-select based on bandwidth).
+- Local encrypted cache until media acknowledged by server; purge per retention policy.
+
+7) SMART ROUTING & PRIORITIZATION
+- Route incident to the correct agency automatically (Police / Fire / Ambulance / NECC) based on classification + user selection.
+- Send priority score and confidence (e.g., severity 1–5) with media and sensor metadata.
+- Provide estimated nearest-responder ETA using responder geolocations (from agency dashboard).
+
+8) FALSE REPORT & ABUSE DETECTION
+- Device & behavioral heuristics for prank detection (e.g., repeated identical reports, no media with high severity).
+- Rate-limiting, temporary hold with required evidence for suspicious reports.
+- Allow agency override and manual unmasking in flagged investigations; all unmasking audited.
+
+9) REAL-TIME INCIDENT UPDATES & TWO-WAY SECURE CHAT
+- Incident timeline: Submitted → Received → Verified → Dispatched → Responder en route → On scene → Resolved.
+- Push notifications for status changes.
+- Optional ephemeral secure chat between user and assigned responder (messages attached to incident and auto-expire per policy).
+
+10) OFFLINE-FIRST & FALLBACKS
+- Create incident offline, store encrypted locally, auto-retry on reconnection.
+- SMS fallback: when data unavailable, send structured SMS with GPS & timestamp to predefined agency SMS gateway and 112 as fallback. (Implement local gateway adapter.)
+- USSD fallback pattern for extremely low bandwidth environments (optional).
+
+11) PRIVACY & LEGAL COMPLIANCE
+- Follow Ghana Data Protection Act (Act 843) requirements: lawful basis, data minimization, purpose limitation, consent, DPC reporting. Include a copy of the privacy notice & consent capture flow.
+- End-to-end TLS; media encrypted at rest; role-based access control for agencies.
+- Data retention policy configurable by admin (default media retention: 90 days; records: 1 year unless flagged).
+- Audit logs for every access to incident data and unmasking actions.
+
+12) MULTI-LANGUAGE & ACCESSIBILITY
+- Localized UI strings (English, Twi, Ga, Ewe), externalized for translation.
+- Text-to-speech support for low literacy users.
+- Large fonts, screen reader labels, and accessible color contrasts.
+
+13) UNIQUE COMMUNITY & ANALYTICS FEATURES
+- Witness mode: nearby users can attach corroborating media to a single incident ID (consent-driven).
+- Neighborhood safety alerts: broadcast localized safety notifications to subscribed users (e.g., flood warning, large fire).
+- Predictive heatmaps (privacy-preserving aggregation) to visualize recurring hotspots (for agency planning).
+- Smart traffic alerts for ambulances/firetrucks integration to advise drivers (optional integrations with traffic authority).
+
+14) SECURITY & HARDENING
+- Zero-trust backend, key rotation, HSM or cloud KMS for media keys.
+- Penetration testing, mobile app hardening (obfuscation), root/jailbreak detection with safe fallback UX.
+- Rate limiting, WAF, DDoS mitigation plans.
+
+15) BACKEND & API CONTRACT (OPENAPI)
+- POST /v1/incidents — create incident (payload: deviceId, userId?, lat, lon, accuracy, timestamp, incidentType, severity, mediaRefs[], anonFlag, ghanaCardRef?, faceMatchScore?)  
+- POST /v1/media/start — returns resumable upload session  
+- POST /v1/media/{session}/chunk — chunk upload  
+- POST /v1/users/verify — start Ghana Card OCR & face match workflow  
+- GET /v1/incidents/{id} — incident details & timeline  
+- WS /v1/incidents/subscribe — real-time incident events
+
+16) TESTING & ACCEPTANCE CRITERIA
+- Unit tests, integration tests, E2E tests (report creation → upload → status updates), accessibility tests, and AI model evaluation metrics (false-positive/negative rates).
+- Performance: critical report creation & minimal payload upload < 5s on typical 4G in Ghana for a photo + GPS.
+- Reliability: offline-to-online sync tested across network flaps, resumable upload tests.
+
+17) DELIVERABLES
+- Native Android & iOS source code (or Flutter project) with build scripts and signed debug builds.
+- OpenAPI spec & sample server stubs.
+- Figma screens & design tokens.
+- README + deployment & configuration guide (APNs/FCM, Twilio/local SMS gateway integration, NIA keys).
+- Privacy & Data Protection compliance document (how app meets Act 843).
+- Test results and security audit checklist.
+
+18) DEPLOYMENT NOTES FOR GHANA INTEGRATION
+- Integrate with National Identification Authority (NIA) verification APIs where available for Ghana Card verification; if direct access is not possible provide manual verification and secure upload fallback. (NIA provides verification services to institutions.)  
+- Ensure Data Protection Commission (DPC) compliance and register processing activities if required.
+- Provide admin procedures and thresholds for agencies to unmask anonymous reports (strict auditing & legal checks).
+
+19) SUGGESTED SAMPLE INCIDENTS (SEED DATA FOR DEMO)
+- Road crash on Liberation Road, Accra — multiple casualties, requires ambulance + police.  
+- Market fire at Makola Market — GNFS + police; possible crowding hazard.  
+- Possible kidnapping near East Legon — silent panic mode example.  
+- Medical emergency at Accra Mall — NAS response routing.
+
+20) EXTRA IMPLEMENTATION GUIDANCE
+- Prioritize robustness for the report-sending flow: ensure retries, resume, and acknowledgement systems.  
+- Provide feature flags for agency integration steps (e.g., NIA, SMS gateway) so deployments can toggle integrations.  
+- Make translations editable via CSV/JSON.  
+- Provide a “demo mode” dataset and a dev-only hidden admin view to demonstrate incoming incidents.  
+- Include sample compliance documents and privacy notice templates tailored to Ghana’s Data Protection Act (Act 843).
+
+PRIVACY & ETHICS REMINDERS
+- Require explicit user consent for biometric (face) and continuous audio collection; allow opt-out (with reduced verification score).  
+- Store and process only what is necessary; document lawful basis for each data item in the privacy document.  
+- Provide contact process for data access/erasure requests consistent with Ghana DPC.
+
+FINAL NOTE FOR THE BUILDER (SHORT)
+- Build a citizen-facing mobile app that is ultra-reliable for sending incident packets (GPS+timestamp+media) and provides secure verified flows for agencies to respond. Include the Ghana emergency numbers, Ghana Card/NIA verification fallback, face match with liveness, background audio capture in silent panic, and strict Data Protection Act compliance.
+
+END OF PROMPT

@@ -1,0 +1,73 @@
+const EMERGENCY_RED = "#E8001C";
+const GHANA_GOLD = "#FFD100";
+const DEEP_GREEN = "#006B3F";
+
+export const Colors = {
+  light: {
+    background: "#F5F5F7",
+    surface: "#FFFFFF",
+    surfaceSecondary: "#F0F0F5",
+    card: "#FFFFFF",
+    text: "#0A0A0E",
+    textSecondary: "#6E6E7A",
+    textTertiary: "#AEAEB2",
+    border: "#E5E5EA",
+    tint: EMERGENCY_RED,
+    tabIconDefault: "#AEAEB2",
+    tabIconSelected: EMERGENCY_RED,
+    emergency: EMERGENCY_RED,
+    gold: GHANA_GOLD,
+    green: DEEP_GREEN,
+    police: "#003580",
+    fire: "#FF4500",
+    ambulance: "#00897B",
+    other: "#7B2FBE",
+    success: "#30D158",
+    warning: "#FF9F0A",
+    danger: EMERGENCY_RED,
+    shadow: "rgba(0,0,0,0.1)",
+    overlay: "rgba(0,0,0,0.5)",
+  },
+  dark: {
+    background: "#0A0A0E",
+    surface: "#1C1C1F",
+    surfaceSecondary: "#141417",
+    card: "#1C1C1F",
+    text: "#F5F5F7",
+    textSecondary: "#98989F",
+    textTertiary: "#636368",
+    border: "#2C2C30",
+    tint: EMERGENCY_RED,
+    tabIconDefault: "#636368",
+    tabIconSelected: EMERGENCY_RED,
+    emergency: EMERGENCY_RED,
+    gold: GHANA_GOLD,
+    green: DEEP_GREEN,
+    police: "#4A90D9",
+    fire: "#FF6B35",
+    ambulance: "#26C6B4",
+    other: "#A855F7",
+    success: "#30D158",
+    warning: "#FF9F0A",
+    danger: EMERGENCY_RED,
+    shadow: "rgba(0,0,0,0.4)",
+    overlay: "rgba(0,0,0,0.7)",
+  },
+};
+
+export default {
+  light: {
+    text: Colors.light.text,
+    background: Colors.light.background,
+    tint: Colors.light.tint,
+    tabIconDefault: Colors.light.tabIconDefault,
+    tabIconSelected: Colors.light.tabIconSelected,
+  },
+  dark: {
+    text: Colors.dark.text,
+    background: Colors.dark.background,
+    tint: Colors.dark.tint,
+    tabIconDefault: Colors.dark.tabIconDefault,
+    tabIconSelected: Colors.dark.tabIconSelected,
+  },
+};
