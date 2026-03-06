@@ -7,8 +7,7 @@ import { router } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle, useSharedValue, withRepeat, withTiming,
-  withSequence, withSpring, interpolateColor, Easing, runOnJS,
-  withDelay,
+  withSequence, withSpring, runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
@@ -41,21 +40,96 @@ export default function PanicScreen() {
   const holdTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const holdStartTime = useRef<number>(0);
+  const locationWatcher = useRef<Location.LocationSubscription | null>(null);
   const HOLD_DURATION = 3000;
 
   const bgScale = useSharedValue(1);
-  const buttonScale = useSharedValue(1);
   const alertOpacity = useSharedValue(0);
   const pulseScale = useSharedValue(1);
   const progressAnim = useSharedValue(0);
+
+  const startLocationWatcher = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationText('Location unavailable');
+        return;
+      }
+
+      if (locationWatcher.current) {
+        locationWatcher.current.remove();
+        locationWatcher.current = null;
+      }
+
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+          timeInterval: 5000,
+        },
+        async (loc) => {
+          try {
+            const [place] = await Location.reverseGeocodeAsync({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            });
+
+            const parts = [
+              place?.name,
+              place?.street,
+              place?.subregion,
+              place?.city || place?.district,
+              place?.region,
+              place?.country,
+            ].filter(Boolean);
+
+            const prettyAddress = parts.join(', ');
+
+            const locationData: LocationData = {
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              accuracy: Math.round(loc.coords.accuracy || 0),
+              provider: 'GPS',
+              timestamp: new Date(loc.timestamp).toISOString(),
+              timestampUTC: new Date(loc.timestamp).toUTCString(),
+              humanReadable: prettyAddress || `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`,
+            };
+
+            setLocation(locationData);
+            setLocationText(locationData.humanReadable);
+          } catch {
+            setLocationText('Location unavailable');
+          }
+        },
+      );
+
+      locationWatcher.current = subscription;
+    } catch {
+      setLocationText('Location unavailable');
+    }
+  }, []);
 
   useEffect(() => {
     const now = new Date();
     setTimestamp(formatTimestamp(now));
     const timer = setInterval(() => setTimestamp(formatTimestamp(new Date())), 1000);
-    acquireLocation();
-    return () => clearInterval(timer);
-  }, []);
+    startLocationWatcher();
+    return () => {
+      clearInterval(timer);
+      if (locationWatcher.current) {
+        locationWatcher.current.remove();
+        locationWatcher.current = null;
+      }
+      if (holdTimer.current) {
+        clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+      }
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
+    };
+  }, [startLocationWatcher]);
 
   useEffect(() => {
     if (phase === 'active') {
@@ -78,9 +152,9 @@ export default function PanicScreen() {
     } else {
       pulseScale.value = withSpring(1);
     }
-  }, [phase]);
+  }, [bgScale, phase, pulseScale]);
 
-  const acquireLocation = async (): Promise<LocationData | null> => {
+  const acquireLocation = useCallback(async (): Promise<LocationData | null> => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -120,41 +194,7 @@ export default function PanicScreen() {
       setLocationText('Location unavailable');
       return null;
     }
-  };
-
-  const startHold = useCallback(() => {
-    if (phase !== 'ready') return;
-    setPhase('holding');
-    holdStartTime.current = Date.now();
-    if (mode === 'loud') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-
-    progressInterval.current = setInterval(() => {
-      const elapsed = Date.now() - holdStartTime.current;
-      const progress = Math.min(elapsed / HOLD_DURATION, 1);
-      setHoldProgress(progress);
-      progressAnim.value = progress;
-
-      if (progress >= 1) {
-        clearInterval(progressInterval.current!);
-        runOnJS(activatePanic)();
-      }
-    }, 50);
-
-    holdTimer.current = setTimeout(() => {
-      activatePanic();
-    }, HOLD_DURATION);
-  }, [phase, mode, location]);
-
-  const cancelHold = useCallback(() => {
-    if (phase !== 'holding') return;
-    if (holdTimer.current) clearTimeout(holdTimer.current);
-    if (progressInterval.current) clearInterval(progressInterval.current);
-    setPhase('ready');
-    setHoldProgress(0);
-    progressAnim.value = withTiming(0, { duration: 200 });
-  }, [phase]);
+  }, []);
 
   const activatePanic = useCallback(async () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
@@ -186,7 +226,41 @@ export default function PanicScreen() {
         Alert.alert('Error', msg);
       }
     }, 1000);
-  }, [mode, location, triggerPanic]);
+  }, [acquireLocation, alertOpacity, location, mode, triggerPanic]);
+
+  const startHold = useCallback(() => {
+    if (phase !== 'ready') return;
+    setPhase('holding');
+    holdStartTime.current = Date.now();
+    if (mode === 'loud') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }
+
+    progressInterval.current = setInterval(() => {
+      const elapsed = Date.now() - holdStartTime.current;
+      const progress = Math.min(elapsed / HOLD_DURATION, 1);
+      setHoldProgress(progress);
+      progressAnim.value = progress;
+
+      if (progress >= 1) {
+        clearInterval(progressInterval.current!);
+        runOnJS(activatePanic)();
+      }
+    }, 50);
+
+    holdTimer.current = setTimeout(() => {
+      activatePanic();
+    }, HOLD_DURATION);
+  }, [activatePanic, mode, phase, progressAnim]);
+
+  const cancelHold = useCallback(() => {
+    if (phase !== 'holding') return;
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    if (progressInterval.current) clearInterval(progressInterval.current);
+    setPhase('ready');
+    setHoldProgress(0);
+    progressAnim.value = withTiming(0, { duration: 200 });
+  }, [phase, progressAnim]);
 
   const handleCancel = useCallback(async () => {
     cancelPanic();
@@ -200,10 +274,6 @@ export default function PanicScreen() {
     router.back();
   }, [cancelPanic, mode, queuedLocalId, removeOfflineIncident]);
 
-  const bgAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: bgScale.value }],
-  }));
-
   const buttonAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: phase === 'holding' ? withSpring(0.94) : pulseScale.value }],
   }));
@@ -213,14 +283,6 @@ export default function PanicScreen() {
   }));
 
   const circleProgress = holdProgress;
-  const circumference = 2 * Math.PI * 80;
-  const strokeDashoffset = circumference * (1 - circleProgress);
-
-  const getPhaseColor = () => {
-    if (phase === 'active') return '#E8001C';
-    if (phase === 'holding' || phase === 'activating') return '#FF6B35';
-    return '#E8001C';
-  };
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -268,6 +330,14 @@ export default function PanicScreen() {
             {t('loudMode', language)}
           </Text>
         </Pressable>
+      </View>
+
+      <View style={styles.modeHelpRow}>
+        <Text style={[styles.modeHelpText, { fontFamily: 'Rubik_400Regular' }]}>
+          {mode === 'silent'
+            ? 'Silent: sends alerts without sounds or strong vibration, for discreet emergencies.'
+            : 'Loud: uses strong feedback so you clearly know when the panic alert is active.'}
+        </Text>
       </View>
 
       <View style={styles.centerArea}>
@@ -392,6 +462,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 20,
   },
+  modeHelpRow: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
   modeBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -409,6 +483,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(232,0,28,0.2)',
   },
   modeBtnText: { fontSize: 13 },
+  modeHelpText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+  },
   centerArea: {
     flex: 1,
     alignItems: 'center',

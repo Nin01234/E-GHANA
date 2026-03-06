@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, useWindowDimensions,
   useColorScheme, Platform, Linking,
@@ -40,7 +40,7 @@ function PulsingRing({ color, size }: { color: string; size: number }) {
       -1,
       false
     );
-  }, []);
+  }, [opacity, scale]);
 
   const style = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

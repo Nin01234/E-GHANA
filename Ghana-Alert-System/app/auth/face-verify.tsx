@@ -1,27 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, Platform, Alert,
+  View, Text, StyleSheet, Pressable, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import Animated, {
   useSharedValue, useAnimatedStyle, withRepeat, withTiming,
   withSequence, Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 
 type Phase = 'guide' | 'capturing' | 'processing' | 'success' | 'failed';
 
 export default function FaceVerifyScreen() {
-  const isDark = true;
-  const C = Colors.dark;
   const insets = useSafeAreaInsets();
-  const { verifyFace, user } = useAuth();
+  const { verifyFace } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [phase, setPhase] = useState<Phase>('guide');
@@ -45,7 +42,7 @@ export default function FaceVerifyScreen() {
         -1, true
       );
     }
-  }, [phase]);
+  }, [faceGlow, phase, scanLine]);
 
   const scanStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: scanLine.value * 200 }],

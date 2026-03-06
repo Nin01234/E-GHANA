@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, Pressable, ScrollView, useColorScheme,
-  Platform, Alert, Modal, Switch,
+  Platform, Alert, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -786,6 +786,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   identityName: { fontSize: 22 },
+  identitySub: { fontSize: 13, textAlign: 'center' as const },
+  lockInput: { fontSize: 16, paddingVertical: 8, minWidth: 80 },
+  lockError: { fontSize: 13, marginTop: 4 },
   verificationBadge: {
     flexDirection: 'row',
     alignItems: 'center',

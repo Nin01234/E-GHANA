@@ -11,36 +11,75 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
+import { Colors } from "@/constants/colors";
 
 export type ErrorFallbackProps = {
   error: Error;
   resetError: () => void;
 };
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const insets = useSafeAreaInsets();
+  const C = isDark ? Colors.dark : Colors.light;
 
   const theme = {
-    background: isDark ? "#000000" : "#FFFFFF",
-    backgroundSecondary: isDark ? "#1C1C1E" : "#F2F2F7",
-    text: isDark ? "#FFFFFF" : "#000000",
-    textSecondary: isDark ? "rgba(255, 255, 255, 0.7)" : "rgba(0, 0, 0, 0.7)",
-    link: "#007AFF",
+    background: C.background,
+    backgroundSecondary: C.surfaceSecondary,
+    surface: C.surface,
+    text: C.text,
+    textSecondary: C.textSecondary,
+    border: C.border,
+    link: C.tint,
     buttonText: "#FFFFFF",
+    shadow: C.shadow ?? (isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.12)"),
   };
 
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const devBtnScale = useSharedValue(1);
+  const mainBtnScale = useSharedValue(1);
+  const closeBtnScale = useSharedValue(1);
+
+  const devBtnAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: devBtnScale.value }],
+  }));
+
+  const mainBtnAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: mainBtnScale.value }],
+  }));
+
+  const closeBtnAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: closeBtnScale.value }],
+  }));
 
   const handleRestart = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await reloadAppAsync();
     } catch (restartError) {
       console.error("Failed to restart app:", restartError);
       resetError();
     }
+  };
+
+  const openDevModal = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsModalVisible(true);
+  };
+
+  const closeDevModal = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsModalVisible(false);
   };
 
   const formatErrorDetails = (): string => {
@@ -60,21 +99,43 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {__DEV__ ? (
-        <Pressable
-          onPress={() => setIsModalVisible(true)}
+        <AnimatedPressable
+          onPressIn={() => {
+            devBtnScale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
+          }}
+          onPressOut={() => {
+            devBtnScale.value = withSpring(1);
+          }}
+          onPress={openDevModal}
           accessibilityLabel="View error details"
           accessibilityRole="button"
-          style={({ pressed }) => [
+          style={[
             styles.topButton,
+            devBtnAnimatedStyle,
             {
               top: insets.top + 16,
               backgroundColor: theme.backgroundSecondary,
-              opacity: pressed ? 0.8 : 1,
+              borderColor: theme.border,
+              borderWidth: 1,
+              shadowColor: theme.text,
+              shadowOpacity: isDark ? 0.2 : 0.08,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 4,
             },
           ]}
         >
           <Feather name="alert-circle" size={20} color={theme.text} />
-        </Pressable>
+          <Text
+            style={[
+              styles.devButtonLabel,
+              { color: theme.textSecondary },
+            ]}
+            numberOfLines={1}
+          >
+            Dev
+          </Text>
+        </AnimatedPressable>
       ) : null}
 
       <View style={styles.content}>
@@ -86,21 +147,34 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           Please reload the app to continue.
         </Text>
 
-        <Pressable
-          onPress={handleRestart}
-          style={({ pressed }) => [
-            styles.button,
-            {
-              backgroundColor: theme.link,
-              opacity: pressed ? 0.9 : 1,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
-            },
-          ]}
-        >
-          <Text style={[styles.buttonText, { color: theme.buttonText }]}>
-            Try Again
-          </Text>
-        </Pressable>
+        <Animated.View style={mainBtnAnimatedStyle}>
+          <Pressable
+            onPressIn={() => {
+              mainBtnScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+            }}
+            onPressOut={() => {
+              mainBtnScale.value = withSpring(1);
+            }}
+            onPress={handleRestart}
+            style={({ pressed }) => [
+              styles.button,
+              {
+                backgroundColor: theme.link,
+                opacity: pressed ? 0.9 : 1,
+                borderColor: theme.link,
+                shadowColor: theme.link,
+                shadowOpacity: 0.35,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 6,
+              },
+            ]}
+          >
+            <Text style={[styles.buttonText, { color: theme.buttonText }]}>
+              Try Again
+            </Text>
+          </Pressable>
+        </Animated.View>
       </View>
 
       {__DEV__ ? (
@@ -108,9 +182,9 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           visible={isModalVisible}
           animationType="slide"
           transparent={true}
-          onRequestClose={() => setIsModalVisible(false)}
+          onRequestClose={closeDevModal}
         >
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, { backgroundColor: theme.shadow }]}>
             <View
               style={[
                 styles.modalContainer,
@@ -120,27 +194,26 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
               <View
                 style={[
                   styles.modalHeader,
-                  {
-                    borderBottomColor: isDark
-                      ? "rgba(255, 255, 255, 0.1)"
-                      : "rgba(0, 0, 0, 0.1)",
-                  },
+                  { borderBottomColor: theme.border },
                 ]}
               >
                 <Text style={[styles.modalTitle, { color: theme.text }]}>
                   Error Details
                 </Text>
-                <Pressable
-                  onPress={() => setIsModalVisible(false)}
+                <AnimatedPressable
+                  onPressIn={() => {
+                    closeBtnScale.value = withSpring(0.9);
+                  }}
+                  onPressOut={() => {
+                    closeBtnScale.value = withSpring(1);
+                  }}
+                  onPress={closeDevModal}
                   accessibilityLabel="Close error details"
                   accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
+                  style={[styles.closeButton, closeBtnAnimatedStyle]}
                 >
                   <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
+                </AnimatedPressable>
               </View>
 
               <ScrollView
@@ -154,7 +227,11 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                 <View
                   style={[
                     styles.errorContainer,
-                    { backgroundColor: theme.backgroundSecondary },
+                    {
+                      backgroundColor: theme.backgroundSecondary,
+                      borderColor: theme.border,
+                      borderWidth: 1,
+                    },
                   ]}
                 >
                   <Text
@@ -197,42 +274,43 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: "Rubik_700Bold",
     textAlign: "center",
     lineHeight: 40,
   },
   message: {
     fontSize: 16,
+    fontFamily: "Rubik_400Regular",
     textAlign: "center",
     lineHeight: 24,
   },
   topButton: {
     position: "absolute",
     right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     zIndex: 10,
+  },
+  devButtonLabel: {
+    fontSize: 13,
+    fontFamily: "Rubik_600SemiBold",
   },
   button: {
     paddingVertical: 16,
-    borderRadius: 8,
-    paddingHorizontal: 24,
+    borderRadius: 14,
+    paddingHorizontal: 28,
     minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   buttonText: {
-    fontWeight: "600",
+    fontFamily: "Rubik_700Bold",
     textAlign: "center",
     fontSize: 16,
   },
@@ -258,7 +336,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: "600",
+    fontFamily: "Rubik_700Bold",
   },
   closeButton: {
     width: 44,

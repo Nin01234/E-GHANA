@@ -116,7 +116,7 @@ export default function ForgotPasswordScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <MaterialCommunityIcons name="email-send-outline" size={20} color="#FFFFFF" />
+            <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
             <Text style={[styles.submitText, { fontFamily: 'Rubik_700Bold' }]}>
               {isLoading ? 'Sending...' : 'Send Reset Link'}
             </Text>

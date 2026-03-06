@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
+import { uploadFaceImage, uploadNationalIdImage } from '@/lib/mediaUpload';
 
 export type NationalIdType = 'ghana_card' | 'nhis' | 'driving_license' | 'voter_id' | 'passport';
 
@@ -135,9 +136,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(mapped);
   }, []);
 
-  const register = useCallback(async (formData: RegisterData, _nationalIdImageUri?: string, _faceImageUri?: string) => {
+  const register = useCallback(async (formData: RegisterData, nationalIdImageUri?: string, faceImageUri?: string) => {
     if (!formData.email) {
       throw new Error('Email is required');
+    }
+
+    // Face biometric is required during signup only
+    if (!faceImageUri) {
+      throw new Error('Face verification is required for registration. Please take a selfie.');
     }
 
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -162,20 +168,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Phone number already registered');
     }
 
+    const userId = signUpData.user.id;
+
+    // Upload face biometric (required during signup)
+    const faceImageUrl = await uploadFaceImage(faceImageUri, userId);
+
+    // Upload national ID image if provided
+    let nationalIdImageUrl: string | null = null;
+    if (nationalIdImageUri) {
+      nationalIdImageUrl = await uploadNationalIdImage(nationalIdImageUri, userId);
+    }
+
     const nowIso = new Date().toISOString();
 
     const { data: inserted, error: insertError } = await supabase
       .from('users')
       .insert({
-        id: signUpData.user.id,
+        id: userId,
         fullName: formData.fullName,
         email: formData.email,
         phone: formData.phone,
         nationalIdType: formData.nationalIdType,
         nationalIdNumber: formData.nationalIdNumber,
-        nationalIdImageUrl: null,
-        faceImageUrl: null,
-        isVerified: false,
+        nationalIdImageUrl,
+        faceImageUrl,
+        isVerified: true,
         language: 'en',
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -218,6 +235,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (updates.email !== undefined) patch.email = updates.email;
     if (updates.language) patch.language = updates.language;
 
+    if (updates.faceImageUri) {
+      patch.faceImageUrl = await uploadFaceImage(updates.faceImageUri, user.id);
+      patch.isVerified = true;
+    }
+    if (updates.nationalIdImageUri) {
+      patch.nationalIdImageUrl = await uploadNationalIdImage(updates.nationalIdImageUri, user.id);
+    }
+
+    patch.updatedAt = new Date().toISOString();
+
     const { data: updated, error } = await supabase
       .from('users')
       .update(patch)
@@ -246,26 +273,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(mapped);
   }, [user]);
 
-  const verifyFace = useCallback(async (_faceUri: string): Promise<{ verified: boolean; confidence: number; message: string }> => {
+  const verifyFace = useCallback(async (faceUri: string): Promise<{ verified: boolean; confidence: number; message: string }> => {
     if (!user) {
       throw new Error('Not authenticated');
     }
 
-    const { error } = await supabase
+    // Upload face image to Supabase Storage
+    const faceImageUrl = await uploadFaceImage(faceUri, user.id);
+
+    const { data: updated, error } = await supabase
       .from('users')
       .update({
+        faceImageUrl,
         isVerified: true,
+        updatedAt: new Date().toISOString(),
       })
-      .eq('id', user.id);
+      .eq('id', user.id)
+      .select('*')
+      .single();
 
-    if (error) {
-      throw new Error(error.message || 'Face verification failed');
+    if (error || !updated) {
+      throw new Error(error?.message || 'Face verification failed');
     }
 
     setUser((prev) =>
       prev
         ? {
             ...prev,
+            faceImageUrl: updated.faceImageUrl ?? prev.faceImageUrl,
             isVerified: true,
           }
         : prev,

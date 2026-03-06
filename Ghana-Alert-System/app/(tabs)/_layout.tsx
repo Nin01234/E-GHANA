@@ -13,6 +13,7 @@ function TabIcon({ name, color, size, focused }: { name: string; color: string; 
     emergency: { icon: MaterialCommunityIcons, iconName: focused ? 'shield-alert' : 'shield-alert-outline' },
     contacts: { icon: MaterialCommunityIcons, iconName: focused ? 'phone-in-talk' : 'phone-outline' },
     history: { icon: Ionicons, iconName: focused ? 'time' : 'time-outline' },
+    notifications: { icon: Ionicons, iconName: focused ? 'notifications' : 'notifications-outline' },
     settings: { icon: Ionicons, iconName: focused ? 'settings' : 'settings-outline' },
   };
   const item = icons[name];
@@ -95,6 +96,24 @@ function ClassicTabLayout() {
           title: t('history', language),
           tabBarIcon: ({ color, size, focused }) => (
             <TabIcon name="history" color={color} size={size} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: t('notifications', language),
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name="notifications" color={color} size={size} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="responders"
+        options={{
+          title: t('responders', language),
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name="responders" color={color} size={size} focused={focused} />
           ),
         }}
       />

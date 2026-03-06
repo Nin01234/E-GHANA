@@ -16,8 +16,19 @@ const STORAGE_KEY_PIN = 'app_lock_pin_v1';
 
 const AppLockContext = createContext<AppLockContextValue | null>(null);
 
+async function isSecureStoreAvailable(): Promise<boolean> {
+  try {
+    const available = await SecureStore.isAvailableAsync();
+    return !!available;
+  } catch {
+    return false;
+  }
+}
+
 async function loadFlag(key: string, fallback = false): Promise<boolean> {
   try {
+    const available = await isSecureStoreAvailable();
+    if (!available) return fallback;
     const raw = await SecureStore.getItemAsync(key);
     if (raw == null) return fallback;
     return raw === '1';
@@ -28,6 +39,8 @@ async function loadFlag(key: string, fallback = false): Promise<boolean> {
 
 async function saveFlag(key: string, value: boolean): Promise<void> {
   try {
+    const available = await isSecureStoreAvailable();
+    if (!available) return;
     await SecureStore.setItemAsync(key, value ? '1' : '0');
   } catch {
     // ignore
@@ -42,6 +55,11 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      const available = await isSecureStoreAvailable();
+      if (!available) {
+        // Secure storage not available on this platform / build – disable lock feature.
+        return;
+      }
       const enabled = await loadFlag(STORAGE_KEY_ENABLED, false);
       const pin = await SecureStore.getItemAsync(STORAGE_KEY_PIN);
       if (!mounted) return;
@@ -74,6 +92,12 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   const unlockWithPin = useCallback(
     async (pin: string): Promise<boolean> => {
       try {
+        const available = await isSecureStoreAvailable();
+        if (!available) {
+          // If secure storage is unavailable, treat as unlocked (no-op) instead of crashing.
+          setIsLocked(false);
+          return true;
+        }
         const stored = await SecureStore.getItemAsync(STORAGE_KEY_PIN);
         if (!stored || stored !== pin) return false;
         setIsLocked(false);
@@ -86,6 +110,14 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   );
 
   const configurePin = useCallback(async (pin: string | null) => {
+    const available = await isSecureStoreAvailable();
+    if (!available) {
+      // On platforms without secure storage, ignore configuration requests gracefully.
+      setHasPin(false);
+      setLockEnabled(false);
+      setIsLocked(false);
+      return;
+    }
     if (!pin) {
       await SecureStore.deleteItemAsync(STORAGE_KEY_PIN);
       await saveFlag(STORAGE_KEY_ENABLED, false);

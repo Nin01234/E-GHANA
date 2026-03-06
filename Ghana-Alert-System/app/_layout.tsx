@@ -1,8 +1,8 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack, router, useSegments, useRouter } from "expo-router";
+import { Stack, useSegments, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { View, ActivityIndicator, LogBox } from "react-native";
+import { View, ActivityIndicator, LogBox, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -19,7 +19,6 @@ import {
   Rubik_700Bold,
   Rubik_900Black,
 } from "@expo-google-fonts/rubik";
-import { useColorScheme } from "react-native";
 import { StatusBar } from "expo-status-bar";
 
 SplashScreen.preventAutoHideAsync();
@@ -47,7 +46,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (isAuthenticated && inAuthGroup) {
       navRouter.replace("/(tabs)");
     }
-  }, [isAuthenticated, isLoading, segments]);
+  }, [isAuthenticated, isLoading, navRouter, segments]);
 
   if (isLoading) {
     return (

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, TextInput,
-  useColorScheme, Platform, Image, Alert,
+  useColorScheme, Platform, Image, Alert, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -11,11 +11,13 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmergency, IncidentType, LocationData } from '@/contexts/EmergencyContext';
 import { t } from '@/constants/translations';
+import { getFirstAidAdvice, buildFirstAidSpeech } from '@/lib/firstAid';
 
 type IncidentConfig = {
   label: string;
@@ -30,6 +32,24 @@ const INCIDENT_TYPES: Record<string, IncidentConfig> = {
   medical: { label: 'Medical', icon: 'ambulance', color: '#00897B', bg: 'rgba(0,137,123,0.12)' },
   other: { label: 'Other', icon: 'alert-circle', color: '#7B2FBE', bg: 'rgba(123,47,190,0.12)' },
 };
+
+type PoliceCase = {
+  label: string;
+  icon: string;
+  keywords?: string[];
+};
+
+const POLICE_CASES: PoliceCase[] = [
+  { label: 'Armed robbery', icon: 'pistol', keywords: ['robbery', 'gun', 'armed'] },
+  { label: 'Burglary / theft', icon: 'home-lock', keywords: ['burglary', 'theft', 'stolen', 'break-in'] },
+  { label: 'Domestic violence', icon: 'home-heart', keywords: ['domestic', 'abuse', 'family'] },
+  { label: 'Assault / fighting', icon: 'karate', keywords: ['assault', 'fight', 'violence'] },
+  { label: 'Kidnapping / missing person', icon: 'account-search', keywords: ['kidnap', 'missing', 'abduction'] },
+  { label: 'Sexual offence', icon: 'alert-octagon', keywords: ['sexual', 'rape', 'harassment'] },
+  { label: 'Fraud / cybercrime', icon: 'shield-bug', keywords: ['fraud', 'scam', 'cyber', 'online'] },
+  { label: 'Traffic accident', icon: 'car-crash', keywords: ['traffic', 'accident', 'crash', 'vehicle'] },
+  { label: 'Other police case', icon: 'shield-account', keywords: ['other'] },
+];
 
 function formatTimestamp(date: Date): string {
   return date.toLocaleString('en-GH', {
@@ -95,21 +115,112 @@ export default function ReportScreen() {
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const audioRecordingRef = useRef<Audio.Recording | null>(null);
+  const audioPlaybackRef = useRef<Audio.Sound | null>(null);
   const [videoUris, setVideoUris] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [timestamp, setTimestamp] = useState('');
   const spamWindowRef = useRef<{ windowStart: number; count: number }>({ windowStart: 0, count: 0 });
-
+  const [isFirstAidPlaying, setIsFirstAidPlaying] = useState(false);
+  const locationWatcher = useRef<Location.LocationSubscription | null>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const submitScale = useSharedValue(1);
   const submitAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: submitScale.value }] }));
+  const liveFirstAid = incidentType === 'medical'
+    ? getFirstAidAdvice(description, incidentType as IncidentType)
+    : null;
+  const [policeCase, setPoliceCase] = useState<string | null>(null);
+  const [policeCaseQuery, setPoliceCaseQuery] = useState('');
+
+  const filteredPoliceCases = useMemo(() => {
+    const q = policeCaseQuery.trim().toLowerCase();
+    if (!q) return POLICE_CASES;
+    return POLICE_CASES.filter((c) => {
+      const base = c.label.toLowerCase();
+      if (base.includes(q)) return true;
+      return (c.keywords || []).some((k) => k.toLowerCase().includes(q));
+    });
+  }, [policeCaseQuery]);
 
   useEffect(() => {
     setTimestamp(formatTimestamp(new Date()));
     const timer = setInterval(() => setTimestamp(formatTimestamp(new Date())), 1000);
-    acquireLocation();
-    return () => clearInterval(timer);
-  }, []);
+    const startWatcher = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationText('Location permission denied');
+          return;
+        }
+
+        if (locationWatcher.current) {
+          locationWatcher.current.remove();
+          locationWatcher.current = null;
+        }
+
+        const subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 10,
+            timeInterval: 5000,
+          },
+          async (loc) => {
+            try {
+              const [place] = await Location.reverseGeocodeAsync({
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+              });
+
+              const parts = [
+                place?.name,
+                place?.street,
+                place?.subregion,
+                place?.city || place?.district,
+                place?.region,
+                place?.country,
+              ].filter(Boolean);
+
+              const prettyAddress = parts.join(', ');
+              const locationData: LocationData = {
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+                accuracy: Math.round(loc.coords.accuracy || 0),
+                provider: 'GPS',
+                timestamp: new Date(loc.timestamp).toISOString(),
+                timestampUTC: new Date(loc.timestamp).toUTCString(),
+                humanReadable: prettyAddress || `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`,
+              };
+              setLocation(locationData);
+              setLocationText(locationData.humanReadable);
+            } catch {
+              setLocationText('Location unavailable');
+            }
+          },
+        );
+
+        locationWatcher.current = subscription;
+      } catch {
+        setLocationText('Location unavailable');
+      }
+    };
+
+    startWatcher();
+
+    return () => {
+      clearInterval(timer);
+      if (locationWatcher.current) {
+        locationWatcher.current.remove();
+        locationWatcher.current = null;
+      }
+      if (isFirstAidPlaying) {
+        Speech.stop();
+      }
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.unloadAsync();
+        audioPlaybackRef.current = null;
+      }
+    };
+  }, [isFirstAidPlaying]);
 
   const acquireLocation = async (): Promise<LocationData | null> => {
     try {
@@ -168,6 +279,44 @@ export default function ReportScreen() {
     }
   };
 
+  const handleToggleAudioPlayback = async () => {
+    if (!audioUri) {
+      Alert.alert('No audio', 'Record an audio note first.');
+      return;
+    }
+    try {
+      // If already playing, stop
+      if (isAudioPlaying && audioPlaybackRef.current) {
+        await audioPlaybackRef.current.stopAsync();
+        setIsAudioPlaying(false);
+        return;
+      }
+
+      // Clean up any previous sound
+      if (audioPlaybackRef.current) {
+        await audioPlaybackRef.current.unloadAsync();
+        audioPlaybackRef.current = null;
+      }
+
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
+      audioPlaybackRef.current = sound;
+      setIsAudioPlaying(true);
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded) return;
+        if (status.didJustFinish) {
+          setIsAudioPlaying(false);
+          sound.setOnPlaybackStatusUpdate(null);
+        }
+      });
+
+      await sound.playAsync();
+    } catch {
+      setIsAudioPlaying(false);
+      Alert.alert('Error', 'Failed to play audio note.');
+    }
+  };
+
   const fromGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -175,12 +324,20 @@ export default function ReportScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.8,
       allowsMultipleSelection: true,
       selectionLimit: 5,
     });
     if (!result.canceled) {
-      setPhotos(prev => [...prev, ...result.assets.map(a => a.uri)]);
+      for (const asset of result.assets) {
+        const isVideo = asset.type === 'video' || (asset as any).duration != null || /\.(mp4|mov|m4v)$/i.test(asset.uri);
+        if (isVideo) {
+          setVideoUris((prev) => [...prev, asset.uri]);
+        } else {
+          setPhotos((prev) => [...prev, asset.uri]);
+        }
+      }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
@@ -224,9 +381,14 @@ export default function ReportScreen() {
         ...videoUris,
       ];
 
+      const finalDescription =
+        incidentType === 'police' && policeCase
+          ? `[Police case: ${policeCase}] ${description || ''}`.trim()
+          : description;
+
       const result = await submitIncident({
         type: incidentType as IncidentType,
-        description,
+        description: finalDescription,
         location: locToUse,
         mediaUris,
         isAnonymous,
@@ -305,6 +467,161 @@ export default function ReportScreen() {
         </Text>
         <TypeSelector selected={incidentType} onSelect={setIncidentType} C={C} />
 
+        {incidentType === 'police' && (
+          <>
+            <Text style={[styles.sectionLabel, { color: C.textSecondary, fontFamily: 'Rubik_600SemiBold' }]}>
+              Police case type
+            </Text>
+
+            <View style={[styles.policeCaseCard, { backgroundColor: C.surface, borderColor: C.border }]}>
+              <LinearGradient
+                colors={isDark ? ['rgba(74,144,217,0.14)', 'rgba(0,0,0,0)'] : ['rgba(0,53,128,0.10)', 'rgba(255,255,255,0)']}
+                style={styles.policeCaseCardBg}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+
+              <View style={styles.policeCaseHeaderRow}>
+                <View style={styles.policeCaseHeaderLeft}>
+                  <View style={[styles.policeCaseIconBadge, { backgroundColor: (isDark ? 'rgba(74,144,217,0.18)' : 'rgba(0,53,128,0.10)') }]}>
+                    <MaterialCommunityIcons name="police-badge" size={18} color={isDark ? '#4A90D9' : '#003580'} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.policeCaseTitle, { color: C.text, fontFamily: 'Rubik_700Bold' }]}>
+                      Choose the closest match
+                    </Text>
+                    <Text style={[styles.policeCaseSubtitle, { color: C.textSecondary, fontFamily: 'Rubik_400Regular' }]}>
+                      Helps route your report faster. You can change this later.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.policeQuickActions}>
+                  <Pressable
+                    onPress={() => Linking.openURL('tel:191')}
+                    style={[styles.policeQuickBtn, { borderColor: (isDark ? 'rgba(74,144,217,0.40)' : 'rgba(0,53,128,0.35)') }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Call police 191"
+                  >
+                    <MaterialCommunityIcons name="phone" size={14} color={isDark ? '#4A90D9' : '#003580'} />
+                    <Text style={[styles.policeQuickBtnText, { color: isDark ? '#4A90D9' : '#003580', fontFamily: 'Rubik_600SemiBold' }]}>
+                      Call 191
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => Linking.openURL('tel:112')}
+                    style={[styles.policeQuickBtn, { borderColor: C.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Call national emergency 112"
+                  >
+                    <MaterialCommunityIcons name="phone-alert" size={14} color={C.textSecondary} />
+                    <Text style={[styles.policeQuickBtnText, { color: C.textSecondary, fontFamily: 'Rubik_600SemiBold' }]}>
+                      Call 112
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.policeSearchRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)', borderColor: C.border }]}>
+                <Ionicons name="search" size={16} color={C.textTertiary} />
+                <TextInput
+                  value={policeCaseQuery}
+                  onChangeText={setPoliceCaseQuery}
+                  placeholder="Search police cases…"
+                  placeholderTextColor={C.textTertiary}
+                  style={[styles.policeSearchInput, { color: C.text, fontFamily: 'Rubik_400Regular' }]}
+                  accessibilityLabel="Search police case types"
+                />
+                {policeCaseQuery.length > 0 && (
+                  <Pressable
+                    onPress={() => setPoliceCaseQuery('')}
+                    style={styles.policeSearchClear}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                  >
+                    <Ionicons name="close-circle" size={18} color={C.textTertiary} />
+                  </Pressable>
+                )}
+              </View>
+
+              {policeCase && (
+                <View style={[styles.policeSelectedRow, { borderColor: C.border }]}>
+                  <MaterialCommunityIcons name="check-decagram" size={16} color={isDark ? '#4A90D9' : '#003580'} />
+                  <Text style={[styles.policeSelectedText, { color: C.textSecondary, fontFamily: 'Rubik_500Medium' }]} numberOfLines={1}>
+                    Selected: <Text style={{ color: C.text, fontFamily: 'Rubik_600SemiBold' }}>{policeCase}</Text>
+                  </Text>
+                  <Pressable
+                    onPress={() => setPoliceCase(null)}
+                    style={styles.policeSelectedClear}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear selected police case"
+                  >
+                    <Text style={[styles.policeSelectedClearText, { color: C.tint, fontFamily: 'Rubik_600SemiBold' }]}>Clear</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              <View style={styles.caseGrid}>
+                {filteredPoliceCases.map((c) => {
+                  const active = policeCase === c.label;
+                  return (
+                    <Pressable
+                      key={c.label}
+                      onPress={() => {
+                        setPoliceCase(prev => (prev === c.label ? null : c.label));
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={[
+                        styles.caseCard,
+                        {
+                          backgroundColor: active ? (isDark ? 'rgba(74,144,217,0.20)' : 'rgba(0,53,128,0.08)') : C.surface,
+                          borderColor: active ? (isDark ? '#4A90D9' : '#003580') : C.border,
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={c.label}
+                    >
+                      <View style={styles.caseCardTopRow}>
+                        <View style={[
+                          styles.caseCardIconWrap,
+                          { backgroundColor: active ? (isDark ? 'rgba(74,144,217,0.20)' : 'rgba(0,53,128,0.10)') : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)') }
+                        ]}>
+                          <MaterialCommunityIcons
+                            name={c.icon as any}
+                            size={16}
+                            color={active ? (isDark ? '#4A90D9' : '#003580') : C.textSecondary}
+                          />
+                        </View>
+                        {active && (
+                          <MaterialCommunityIcons name="check" size={16} color={isDark ? '#4A90D9' : '#003580'} />
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.caseCardText,
+                          {
+                            color: active ? C.text : C.textSecondary,
+                            fontFamily: active ? 'Rubik_600SemiBold' : 'Rubik_400Regular',
+                          },
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {c.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {filteredPoliceCases.length === 0 && (
+                <Text style={[styles.policeEmptyText, { color: C.textTertiary, fontFamily: 'Rubik_400Regular' }]}>
+                  No matches. Try a different search.
+                </Text>
+              )}
+            </View>
+          </>
+        )}
+
         <Text style={[styles.sectionLabel, { color: C.textSecondary, fontFamily: 'Rubik_600SemiBold' }]}>
           {t('addDescription', language)}
         </Text>
@@ -320,6 +637,67 @@ export default function ReportScreen() {
             accessibilityLabel="Emergency description"
           />
         </View>
+
+        {incidentType === 'medical' && liveFirstAid && (
+          <View style={[styles.firstAidCard, { backgroundColor: C.surface, borderColor: C.border }]}>
+            <View style={styles.firstAidHeaderRow}>
+              <View style={styles.firstAidTitleColumn}>
+                <View style={[styles.firstAidChip, { backgroundColor: C.tint + '20' }]}>
+                  <MaterialCommunityIcons name="medical-bag" size={14} color={C.tint} />
+                  <Text style={[styles.firstAidChipText, { color: C.tint, fontFamily: 'Rubik_600SemiBold' }]}>
+                    Live first aid
+                  </Text>
+                </View>
+                <Text style={[styles.firstAidTitle, { color: C.text, fontFamily: 'Rubik_600SemiBold' }]}>
+                  {liveFirstAid.title}
+                </Text>
+                <Text style={[styles.firstAidMetaText, { color: C.textTertiary, fontFamily: 'Rubik_400Regular' }]}>
+                  Updates as you type and does not replace professional care.
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (!liveFirstAid) return;
+                  if (isFirstAidPlaying) {
+                    Speech.stop();
+                    setIsFirstAidPlaying(false);
+                    return;
+                  }
+                  const { text, speechLang, rate } = buildFirstAidSpeech(liveFirstAid, language);
+                  setIsFirstAidPlaying(true);
+                  Speech.speak(text, {
+                    language: speechLang,
+                    rate,
+                    onDone: () => setIsFirstAidPlaying(false),
+                    onStopped: () => setIsFirstAidPlaying(false),
+                    onError: () => setIsFirstAidPlaying(false),
+                  });
+                }}
+                style={styles.firstAidAudioBtn}
+                accessibilityRole="button"
+                accessibilityLabel={isFirstAidPlaying ? 'Stop first aid audio' : 'Play first aid audio'}
+              >
+                <MaterialCommunityIcons
+                  name={isFirstAidPlaying ? 'pause-circle-outline' : 'play-circle-outline'}
+                  size={22}
+                  color={C.tint}
+                />
+                <Text style={[styles.firstAidAudioText, { color: C.tint, fontFamily: 'Rubik_500Medium' }]}>
+                  {isFirstAidPlaying ? 'Stop audio' : 'Hear steps'}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={styles.firstAidDivider} />
+            {liveFirstAid.bullets.map((b, idx) => (
+              <View key={idx} style={styles.firstAidBulletRow}>
+                <View style={[styles.firstAidDot, { backgroundColor: C.tint }]} />
+                <Text style={[styles.firstAidBulletText, { color: C.text, fontFamily: 'Rubik_400Regular' }]}>
+                  {b}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <Text style={[styles.sectionLabel, { color: C.textSecondary, fontFamily: 'Rubik_600SemiBold' }]}>
           {t('attachEvidence', language)}
@@ -429,12 +807,17 @@ export default function ReportScreen() {
         {(audioUri || videoUris.length > 0) && (
           <View style={styles.mediaSummaryRow}>
             {audioUri && (
-              <View style={styles.mediaBadge}>
-                <Ionicons name="mic" size={16} color={C.tint} />
+              <Pressable
+                onPress={handleToggleAudioPlayback}
+                style={styles.mediaBadge}
+                accessibilityRole="button"
+                accessibilityLabel={isAudioPlaying ? 'Stop audio note playback' : 'Play audio note'}
+              >
+                <Ionicons name={isAudioPlaying ? 'pause' : 'mic'} size={16} color={C.tint} />
                 <Text style={[styles.mediaBadgeText, { color: C.textSecondary, fontFamily: 'Rubik_400Regular' }]}>
-                  Audio note attached
+                  {isAudioPlaying ? 'Playing audio note… tap to stop' : 'Audio note attached · tap to play'}
                 </Text>
-              </View>
+              </Pressable>
             )}
             {videoUris.length > 0 && (
               <View style={styles.mediaBadge}>
@@ -555,6 +938,151 @@ const styles = StyleSheet.create({
   locationTime: { fontSize: 11 },
   locationMeta: { flexDirection: 'row', gap: 8, marginTop: 2 },
   locationMetaText: { fontSize: 11 },
+  caseChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  caseChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  caseChipText: {
+    fontSize: 11,
+  },
+  policeCaseCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    overflow: 'hidden',
+    marginTop: 8,
+    gap: 12,
+  },
+  policeCaseCardBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  policeCaseHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  policeCaseHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    flex: 1,
+    paddingRight: 6,
+  },
+  policeCaseIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  policeCaseTitle: {
+    fontSize: 14,
+  },
+  policeCaseSubtitle: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  policeQuickActions: {
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  policeQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.01)',
+  },
+  policeQuickBtnText: {
+    fontSize: 12,
+  },
+  policeSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  policeSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  policeSearchClear: {
+    padding: 2,
+  },
+  policeSelectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  policeSelectedText: {
+    flex: 1,
+    fontSize: 12,
+  },
+  policeSelectedClear: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  policeSelectedClearText: {
+    fontSize: 12,
+  },
+  caseGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  caseCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    minHeight: 74,
+    justifyContent: 'space-between',
+  },
+  caseCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  caseCardIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  caseCardText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  policeEmptyText: {
+    fontSize: 12,
+    marginTop: 4,
+  },
   sectionLabel: {
     fontSize: 12,
     letterSpacing: 0.5,
@@ -659,5 +1187,79 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     letterSpacing: 0.5,
+  },
+  firstAidCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 4,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  firstAidHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  firstAidTitleColumn: {
+    flex: 1,
+    gap: 4,
+  },
+  firstAidChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  firstAidChipText: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  firstAidTitle: {
+    fontSize: 14,
+  },
+  firstAidMetaText: {
+    fontSize: 11,
+  },
+  firstAidAudioBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  firstAidAudioText: {
+    fontSize: 12,
+  },
+  firstAidDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(128,128,128,0.2)',
+    marginVertical: 4,
+  },
+  firstAidBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 3,
+  },
+  firstAidDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 7,
+  },
+  firstAidBulletText: {
+    flex: 1,
+    fontSize: 13,
   },
 });

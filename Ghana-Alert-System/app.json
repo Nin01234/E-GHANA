@@ -72,7 +72,9 @@
           "photosPermission": "E-GHANA needs photo library access to attach evidence to emergency reports.",
           "cameraPermission": "E-GHANA needs camera access to capture evidence."
         }
-      ]
+      ],
+      "expo-maps",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

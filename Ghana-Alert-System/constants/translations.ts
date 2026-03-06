@@ -6,6 +6,8 @@ export type TranslationKey =
   | 'reportIncident'
   | 'history'
   | 'contacts'
+  | 'notifications'
+  | 'responders'
   | 'settings'
   | 'police'
   | 'fire'
@@ -80,6 +82,8 @@ const en: Translations = {
   reportIncident: 'Report Incident',
   history: 'History',
   contacts: 'Contacts',
+  notifications: 'Notifications',
+  responders: 'Responders',
   settings: 'Settings',
   police: 'Police',
   fire: 'Fire',
@@ -153,6 +157,8 @@ const tw: Translations = {
   reportIncident: 'Ka Asem Bio',
   history: 'Nhoma',
   contacts: 'Nkrataa',
+  notifications: 'Nkae',
+  responders: 'Responders',
   settings: 'Nhyehyɛe',
   police: 'Apolisi',
   fire: 'Ogya',
@@ -226,6 +232,8 @@ const ga: Translations = {
   reportIncident: 'Ye Naa Shishi',
   history: 'Lɛ Nyɛmɔ',
   contacts: 'Bii Lɛ',
+  notifications: 'Nkae',
+  responders: 'Responders',
   settings: 'Wɔɔ Gbɛ',
   police: 'Polisi',
   fire: 'Gɔŋ',
@@ -299,6 +307,8 @@ const ewe: Translations = {
   reportIncident: 'Gblɔ Vevienye',
   history: 'Nutata',
   contacts: 'Nuwɔwɔ',
+  notifications: 'Nkae',
+  responders: 'Amesiwo',
   settings: 'Wɔwɔ',
   police: 'Polisi',
   fire: 'Dzɔ',

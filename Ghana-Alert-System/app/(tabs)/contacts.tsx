@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView,
-  useColorScheme, Platform, Linking, Alert,
+  useColorScheme, Platform, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';

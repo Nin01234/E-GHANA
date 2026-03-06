@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { uploadIncidentMediaBatch } from '@/lib/mediaUpload';
 import {
   OfflineIncidentItem,
   enqueueOfflineIncident,
@@ -167,8 +168,6 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
 
   const createIncident = useCallback(async (data: CreateIncidentData): Promise<Incident> => {
     if (!user) {
-      // Your Supabase incidents table has a NOT NULL userId constraint.
-      // "Anonymous" means hidden from responders, not "no account".
       throw new Error('Please log in before submitting a report.');
     }
 
@@ -183,6 +182,7 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
         ...(data.clientFlagSpam ? { note: 'client_flag: frequent_reports' } : {}),
       }],
       userId: user.id,
+      mediaUrls: [],
     };
 
     if (data.location) {
@@ -195,10 +195,6 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
 
     if (data.panicMode) body.panicMode = data.panicMode;
 
-    if (data.mediaUris && data.mediaUris.length > 0) {
-      body.mediaUrls = data.mediaUris;
-    }
-
     const { data: inserted, error } = await supabase
       .from('incidents')
       .insert(body)
@@ -210,6 +206,25 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
     }
 
     const incident = inserted as any as Incident;
+
+    // Upload photos, videos, and audio to Supabase Storage
+    if (data.mediaUris && data.mediaUris.length > 0) {
+      try {
+        const mediaUrls = await uploadIncidentMediaBatch(data.mediaUris, incident.id);
+        const { error: updateError } = await supabase
+          .from('incidents')
+          .update({ mediaUrls, updatedAt: new Date().toISOString() })
+          .eq('id', incident.id)
+          .eq('userId', user.id);
+
+        if (!updateError) {
+          incident.mediaUrls = mediaUrls;
+        }
+      } catch (mediaErr) {
+        console.warn('Media upload failed, incident created without media:', mediaErr);
+      }
+    }
+
     setIncidents(prev => [incident, ...prev]);
     return incident;
   }, [user]);

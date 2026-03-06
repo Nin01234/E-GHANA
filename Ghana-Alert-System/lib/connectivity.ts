@@ -3,9 +3,13 @@ import * as Network from 'expo-network';
 
 export type ConnectivityStatus = 'online' | 'offline' | 'limited';
 
+type NetworkStateWithDetails = Awaited<ReturnType<typeof Network.getNetworkStateAsync>> & {
+  details?: { cellularGeneration?: string };
+};
+
 async function checkStatus(): Promise<ConnectivityStatus> {
   try {
-    const state = await Network.getNetworkStateAsync();
+    const state = await Network.getNetworkStateAsync() as NetworkStateWithDetails;
     if (!state.isConnected || !state.isInternetReachable) return 'offline';
     if (state.type === Network.NetworkStateType.CELLULAR && state.details?.cellularGeneration === '2g') {
       return 'limited';

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, FlatList,
   useColorScheme, Platform, RefreshControl, Alert,
@@ -12,7 +12,8 @@ import Animated, {
   FadeInRight, FadeOutLeft,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Swipeable } from 'react-native-gesture-handler';
+import { WebView } from 'react-native-webview';
 import { Colors } from '@/constants/colors';
 import { useEmergency, Incident, IncidentType, IncidentStatus } from '@/contexts/EmergencyContext';
 import type { OfflineIncidentItem } from '@/lib/offlineIncidents';
@@ -44,7 +45,6 @@ function formatDate(iso: string): string {
 }
 
 function DeleteAction({ onDelete }: { onDelete: () => void }) {
-  const isDark = useColorScheme() === 'dark';
   return (
     <Pressable
       onPress={onDelete}
@@ -58,7 +58,17 @@ function DeleteAction({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-function IncidentCard({ incident, onDelete }: { incident: Incident; onDelete: (id: string) => void }) {
+function IncidentCard({
+  incident,
+  onDelete,
+  onSelect,
+  isSelected,
+}: {
+  incident: Incident;
+  onDelete: (id: string) => void;
+  onSelect: (incident: Incident) => void;
+  isSelected: boolean;
+}) {
   const isDark = useColorScheme() === 'dark';
   const C = isDark ? Colors.dark : Colors.light;
   const scale = useSharedValue(1);
@@ -93,8 +103,17 @@ function IncidentCard({ incident, onDelete }: { incident: Incident; onDelete: (i
         <Pressable
           onPressIn={() => { scale.value = withSpring(0.97); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           onPressOut={() => { scale.value = withSpring(1); }}
-          onPress={() => router.push({ pathname: '/incident/[id]', params: { id: incident.id } })}
-          style={[styles.card, { backgroundColor: C.card, borderColor: typeConf.color + '25' }]}
+          onPress={() => {
+            onSelect(incident);
+            router.push({ pathname: '/incident/[id]', params: { id: incident.id } });
+          }}
+          style={[
+            styles.card,
+            {
+              backgroundColor: C.card,
+              borderColor: isSelected ? C.tint : typeConf.color + '25',
+            },
+          ]}
           accessibilityLabel={`View incident ${incident.id}`}
           accessibilityRole="button"
         >
@@ -255,18 +274,33 @@ export default function HistoryScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { incidents, offlineIncidents, retryOfflineIncident, removeOfflineIncident, isLoading, loadIncidents, deleteIncident, language } = useEmergency();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
   useEffect(() => {
     loadIncidents();
-  }, []);
+  }, [loadIncidents]);
 
-  const handleDelete = useCallback(async (id: string) => {
-    try {
-      await deleteIncident(id);
-    } catch {
-      Alert.alert('Error', 'Failed to delete report. Please try again.');
+  // Clear selected incident if it no longer exists (e.g. deleted or reloaded)
+  useEffect(() => {
+    if (!selectedIncident) return;
+    const stillExists = incidents.some(i => i.id === selectedIncident.id);
+    if (!stillExists) {
+      setSelectedIncident(null);
     }
-  }, [deleteIncident]);
+  }, [incidents, selectedIncident]);
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteIncident(id);
+        // If the deleted incident was selected, remove it from the map
+        setSelectedIncident(prev => (prev?.id === id ? null : prev));
+      } catch {
+        Alert.alert('Error', 'Failed to delete report. Please try again.');
+      }
+    },
+    [deleteIncident],
+  );
 
   const handleRetryOffline = useCallback(async (localId: string) => {
     try {
@@ -322,10 +356,43 @@ export default function HistoryScreen() {
         )}
       </View>
 
+      {selectedIncident && selectedIncident.latitude && selectedIncident.longitude && (
+        <View style={styles.mapWrapper}>
+          <View style={styles.mapHeader}>
+            <View style={styles.mapHeaderLeft}>
+              <Ionicons name="map" size={16} color={C.tint} />
+              <Text style={[styles.mapTitle, { color: C.text, fontFamily: 'Rubik_600SemiBold' }]}>
+                Incident location
+              </Text>
+            </View>
+            <Text style={[styles.mapSubtitle, { color: C.textSecondary, fontFamily: 'Rubik_400Regular' }]}>
+              {selectedIncident.address || 'Precise location saved'}
+            </Text>
+          </View>
+          <View style={styles.mapContainer}>
+            <WebView
+              style={styles.map}
+              source={{
+                uri: `https://www.google.com/maps/search/?api=1&query=${selectedIncident.latitude},${selectedIncident.longitude}&hl=en-GH&region=GH`,
+              }}
+              javaScriptEnabled
+              domStorageEnabled
+            />
+          </View>
+        </View>
+      )}
+
       <FlatList
         data={incidents}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <IncidentCard incident={item} onDelete={handleDelete} />}
+        renderItem={({ item }) => (
+          <IncidentCard
+            incident={item}
+            onDelete={handleDelete}
+            onSelect={setSelectedIncident}
+            isSelected={selectedIncident?.id === item.id}
+          />
+        )}
         contentContainerStyle={[
           styles.listContent,
           { paddingBottom: tabBarHeight + 20 },
@@ -372,6 +439,42 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 16 },
   headerTitle: { fontSize: 28, letterSpacing: -0.5 },
   headerSub: { fontSize: 13, marginTop: 4 },
+  mapWrapper: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  mapHeader: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.02)',
+  },
+  mapHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mapTitle: {
+    fontSize: 13,
+  },
+  mapSubtitle: {
+    fontSize: 11,
+    flex: 1,
+    marginLeft: 8,
+    textAlign: 'right',
+  },
+  mapContainer: {
+    height: 200,
+  },
+  map: {
+    flex: 1,
+  },
   listContent: { paddingHorizontal: 20, paddingTop: 16 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
   card: {
