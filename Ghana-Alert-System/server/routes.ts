@@ -284,20 +284,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── INCIDENTS ROUTES ────────────────────────────────────────────────
   app.post("/api/incidents", requireAuth, async (req, res) => {
     try {
-      const body = {
+      const raw = {
         ...req.body,
-        latitude: req.body.latitude ? String(req.body.latitude) : null,
-        longitude: req.body.longitude ? String(req.body.longitude) : null,
-        accuracyMeters: req.body.accuracyMeters ? Number(req.body.accuracyMeters) : null,
-        priorityScore: req.body.priorityScore ? Number(req.body.priorityScore) : 3,
-        isAnonymous: req.body.isAnonymous === true || req.body.isAnonymous === 'true',
-        timeline: req.body.timeline || [{ status: 'submitted', timestamp: new Date().toISOString() }],
+        latitude: req.body.latitude != null ? String(req.body.latitude) : null,
+        longitude: req.body.longitude != null ? String(req.body.longitude) : null,
+        accuracyMeters: req.body.accuracyMeters != null ? Number(req.body.accuracyMeters) : null,
+        priorityScore: req.body.priorityScore != null ? Number(req.body.priorityScore) : 3,
+        isAnonymous: req.body.isAnonymous === true || req.body.isAnonymous === "true",
+        timeline: req.body.timeline || [{ status: "submitted", timestamp: new Date().toISOString() }],
       };
 
+      const parsed = insertIncidentSchema.safeParse(raw);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid incident data" });
+      }
+
       const [incident] = await db.insert(incidents).values({
-        ...body,
+        ...parsed.data,
         userId: req.session.userId!,
-        status: 'submitted',
+        status: "submitted",
       }).returning();
 
       return res.status(201).json({ incident });

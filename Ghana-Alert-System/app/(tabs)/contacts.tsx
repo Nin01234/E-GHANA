@@ -1,17 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView,
-  useColorScheme, Platform, Linking,
+  Platform, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, withDelay } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { useEmergency } from '@/contexts/EmergencyContext';
 import { t } from '@/constants/translations';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const CONTACTS = [
   {
@@ -59,11 +60,21 @@ const ADDITIONAL = [
   { name: 'NADMO (Disasters)', number: '0800 00 222 1', icon: 'tsunami' as const, color: '#FF9F0A' },
 ];
 
-function EmergencyCard({ contact, language }: { contact: typeof CONTACTS[0]; language: string }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+function EmergencyCard({ contact, language, index }: { contact: typeof CONTACTS[0]; language: string; index: number }) {
+  const { colors: C } = useTheme();
   const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const translateY = useSharedValue(20);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = withDelay(index * 80, withSpring(0, { damping: 14, stiffness: 180 }));
+    opacity.value = withDelay(index * 80, withTiming(1, { duration: 260 }));
+  }, [index, opacity, translateY]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
 
   const handleCall = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -110,11 +121,21 @@ function EmergencyCard({ contact, language }: { contact: typeof CONTACTS[0]; lan
   );
 }
 
-function AdditionalContact({ item }: { item: typeof ADDITIONAL[0] }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+function AdditionalContact({ item, index }: { item: typeof ADDITIONAL[0]; index: number }) {
+  const { colors: C } = useTheme();
   const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const translateY = useSharedValue(20);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = withDelay((CONTACTS.length + index) * 70, withSpring(0, { damping: 16, stiffness: 190 }));
+    opacity.value = withDelay((CONTACTS.length + index) * 70, withTiming(1, { duration: 240 }));
+  }, [index, opacity, translateY]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
 
   return (
     <Animated.View style={animStyle}>
@@ -140,8 +161,7 @@ function AdditionalContact({ item }: { item: typeof ADDITIONAL[0] }) {
 }
 
 export default function ContactsScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { language } = useEmergency();
@@ -170,8 +190,8 @@ export default function ContactsScreen() {
           </Text>
         </View>
 
-        {CONTACTS.map(contact => (
-          <EmergencyCard key={contact.number} contact={contact} language={language} />
+        {CONTACTS.map((contact, index) => (
+          <EmergencyCard key={contact.number} contact={contact} language={language} index={index} />
         ))}
 
         <View style={styles.sectionDivider}>
@@ -182,8 +202,8 @@ export default function ContactsScreen() {
           <View style={[styles.dividerLine, { backgroundColor: C.border }]} />
         </View>
 
-        {ADDITIONAL.map(item => (
-          <AdditionalContact key={item.number} item={item} />
+        {ADDITIONAL.map((item, index) => (
+          <AdditionalContact key={item.number} item={item} index={index} />
         ))}
 
         <View style={[styles.infoBox, { backgroundColor: C.surface, borderColor: C.border }]}>

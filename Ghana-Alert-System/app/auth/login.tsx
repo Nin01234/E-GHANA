@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, TextInput,
-  useColorScheme, Platform, ScrollView, Alert, KeyboardAvoidingView,
+  Platform, ScrollView, Alert, KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -12,12 +12,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEmergency } from '@/contexts/EmergencyContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 export default function LoginScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
-  const { login, loginAsGuest } = useAuth();
+  const { login } = useAuth();
   const { loadIncidents } = useEmergency();
 
   const [email, setEmail] = useState('');
@@ -172,19 +172,7 @@ export default function LoginScreen() {
             </Text>
           </Pressable>
 
-          <Pressable
-            onPress={async () => {
-              await loginAsGuest();
-            }}
-            style={[styles.guestBtn, { borderColor: C.border }]}
-            accessibilityLabel="Continue as guest"
-            accessibilityRole="button"
-          >
-            <MaterialCommunityIcons name="eye-off-outline" size={18} color={C.textSecondary} />
-            <Text style={[styles.guestText, { color: C.textSecondary, fontFamily: 'Rubik_500Medium' }]}>
-              Continue without signing in
-            </Text>
-          </Pressable>
+          
         </View>
 
         <View style={[styles.legalBox, { borderColor: C.border, backgroundColor: C.surface }]}>
@@ -294,19 +282,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   registerText: { fontSize: 16 },
-  guestBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 8,
-  },
-  guestText: {
-    fontSize: 13,
-  },
   legalBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',

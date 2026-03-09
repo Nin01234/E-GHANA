@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, useWindowDimensions,
-  useColorScheme, Platform, Linking,
+  Platform, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -17,6 +17,7 @@ import { useEmergency } from '@/contexts/EmergencyContext';
 import { t } from '@/constants/translations';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useConnectivity } from '@/lib/connectivity';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const EMERGENCY_NUMBERS = [
   { number: '112', label: 'National', color: '#E8001C', icon: 'shield-alert' as const, bg: 'rgba(232,0,28,0.15)' },
@@ -67,8 +68,7 @@ function EmergencyTypeCard({ type, label, icon, color, bg, onPress }: {
     transform: [{ scale: scale.value }],
   }));
 
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
 
   return (
     <Animated.View style={animStyle}>
@@ -112,8 +112,7 @@ function QuickDialButton({ number, label, color, icon, bg }: {
 }
 
 export default function EmergencyHome() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { isDark, colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { language } = useEmergency();

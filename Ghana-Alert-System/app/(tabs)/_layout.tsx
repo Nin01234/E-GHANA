@@ -1,12 +1,13 @@
 import { Tabs } from "expo-router";
 import { BlurView } from "expo-blur";
-import { Platform, StyleSheet, useColorScheme } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
 import { useEmergency } from "@/contexts/EmergencyContext";
 import { t } from "@/constants/translations";
+import { useTheme } from "@/contexts/ThemeContext";
 
 function TabIcon({ name, color, size, focused }: { name: string; color: string; size: number; focused: boolean }) {
   const icons: Record<string, { icon: React.ComponentType<any>; iconName: string }> = {
@@ -23,9 +24,7 @@ function TabIcon({ name, color, size, focused }: { name: string; color: string; 
 }
 
 function ClassicTabLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const C = isDark ? Colors.dark : Colors.light;
+  const { isDark, colors: C } = useTheme();
   const { language } = useEmergency();
   const insets = useSafeAreaInsets();
 
@@ -105,15 +104,6 @@ function ClassicTabLayout() {
           title: t('notifications', language),
           tabBarIcon: ({ color, size, focused }) => (
             <TabIcon name="notifications" color={color} size={size} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="responders"
-        options={{
-          title: t('responders', language),
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="responders" color={color} size={size} focused={focused} />
           ),
         }}
       />

@@ -2,7 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useSegments, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { View, ActivityIndicator, LogBox, useColorScheme } from "react-native";
+import { View, ActivityIndicator, LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -11,6 +11,7 @@ import { AppLockGate } from "@/components/AppLockGate";
 import { queryClient } from "@/lib/query-client";
 import { EmergencyProvider } from "@/contexts/EmergencyContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import {
   useFonts,
   Rubik_400Regular,
@@ -60,11 +61,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const { isDark } = useTheme();
 
   return (
     <>
-      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      <StatusBar style={isDark ? "light" : "dark"} />
       <AuthGuard>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="auth/login" options={{ headerShown: false, animation: "fade" }} />
@@ -119,13 +120,15 @@ export default function RootLayout() {
         <AuthProvider>
           <EmergencyProvider>
             <AppLockProvider>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <AppLockGate>
-                    <RootLayoutNav />
-                  </AppLockGate>
-                </KeyboardProvider>
-              </GestureHandlerRootView>
+              <ThemeProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <KeyboardProvider>
+                    <AppLockGate>
+                      <RootLayoutNav />
+                    </AppLockGate>
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </ThemeProvider>
             </AppLockProvider>
           </EmergencyProvider>
         </AuthProvider>

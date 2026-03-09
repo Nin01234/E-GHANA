@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, Pressable, ScrollView, useColorScheme,
+  View, Text, TextInput, StyleSheet, Pressable, ScrollView,
   Platform, Alert, Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,7 @@ import { useEmergency, Language } from '@/contexts/EmergencyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/constants/translations';
 import { useAppLock } from '@/contexts/AppLockContext';
+import { useTheme, ThemeMode } from '@/contexts/ThemeContext';
 
 function AppLockModal({
   visible,
@@ -27,8 +28,7 @@ function AppLockModal({
   lockEnabled: boolean;
   onConfigurePin: (pin: string | null) => Promise<void>;
 }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -210,8 +210,7 @@ function SettingRow({
   icon: string; iconColor: string; title: string; subtitle?: string;
   right?: React.ReactNode; onPress?: () => void; danger?: boolean;
 }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -240,8 +239,7 @@ function SettingRow({
 }
 
 function PrivacyModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -301,8 +299,7 @@ function PrivacyModal({ visible, onClose }: { visible: boolean; onClose: () => v
 }
 
 function AboutModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -367,8 +364,7 @@ function AboutModal({ visible, onClose }: { visible: boolean; onClose: () => voi
 }
 
 function IdentityModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
@@ -444,8 +440,7 @@ function IdentityModal({ visible, onClose }: { visible: boolean; onClose: () => 
 }
 
 export default function SettingsScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C, mode, setMode } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { language, setLanguage, deleteAllIncidents, incidents } = useEmergency();
@@ -457,6 +452,12 @@ export default function SettingsScreen() {
   const [showIdentity, setShowIdentity] = useState(false);
   const [showAppLock, setShowAppLock] = useState(false);
   const { lockEnabled, configurePin } = useAppLock();
+
+  const themeOptions: { id: ThemeMode; title: string; subtitle: string; icon: string }[] = [
+    { id: 'system', title: 'System default', subtitle: 'Match your device theme', icon: 'theme-light-dark' },
+    { id: 'light', title: 'Light', subtitle: 'Bright background, day use', icon: 'white-balance-sunny' },
+    { id: 'dark', title: 'Dark', subtitle: 'Dim background, night use', icon: 'weather-night' },
+  ];
 
   const handleClearHistory = () => {
     Alert.alert(
@@ -587,6 +588,61 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <Text style={[styles.sectionTitle, { color: C.textSecondary, fontFamily: 'Rubik_600SemiBold' }]}>APPEARANCE</Text>
+          {themeOptions.map((opt) => {
+            const active = mode === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                onPress={() => {
+                  setMode(opt.id);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={[
+                  styles.row,
+                  {
+                    borderBottomColor: C.border,
+                    backgroundColor: active ? C.surfaceSecondary : C.surface,
+                  },
+                ]}
+                accessibilityLabel={opt.title}
+                accessibilityRole="button"
+              >
+                <View style={[styles.rowIcon, { backgroundColor: active ? C.tint + '20' : C.surfaceSecondary }]}>
+                  <MaterialCommunityIcons
+                    name={opt.icon as any}
+                    size={20}
+                    color={active ? C.tint : C.textSecondary}
+                  />
+                </View>
+                <View style={styles.rowContent}>
+                  <Text
+                    style={[
+                      styles.rowTitle,
+                      {
+                        color: C.text,
+                        fontFamily: active ? 'Rubik_600SemiBold' : 'Rubik_400Regular',
+                      },
+                    ]}
+                  >
+                    {opt.title}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.rowSub,
+                      { color: C.textSecondary, fontFamily: 'Rubik_400Regular' },
+                    ]}
+                  >
+                    {opt.subtitle}
+                  </Text>
+                </View>
+                {active && <MaterialCommunityIcons name="check-circle" size={18} color={C.tint} />}
+              </Pressable>
+            );
+          })}
         </View>
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>

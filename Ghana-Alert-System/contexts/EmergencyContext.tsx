@@ -14,7 +14,15 @@ import {
 
 export type IncidentType = 'police' | 'fire' | 'medical' | 'other';
 export type PanicMode = 'silent' | 'loud';
-export type IncidentStatus = 'submitted' | 'received' | 'verified' | 'dispatched' | 'enroute' | 'onscene' | 'resolved';
+export type IncidentStatus =
+  | 'submitted'
+  | 'received'
+  | 'verified'
+  | 'dispatched'
+  | 'enroute'
+  | 'onscene'
+  | 'resolved'
+  | 'critical_alert';
 export type Language = 'en' | 'tw' | 'ga' | 'ewe';
 
 export interface LocationData {
@@ -47,6 +55,19 @@ export interface Incident {
   timeline: { status: IncidentStatus; timestamp: string; note?: string }[];
 }
 
+export interface CommunityAlert {
+  id: string;
+  type: IncidentType;
+  description: string | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  reportCount: number;
+  radiusMeters: number;
+  firstReportedAt: string;
+  lastReportedAt: string;
+}
+
 export interface EmergencyContextValue {
   incidents: Incident[];
   activeIncident: Incident | null;
@@ -55,6 +76,7 @@ export interface EmergencyContextValue {
   language: Language;
   isLoading: boolean;
   offlineIncidents: OfflineIncidentItem[];
+  communityAlerts: CommunityAlert[];
   setLanguage: (lang: Language) => void;
   triggerPanic: (mode: PanicMode, location: LocationData | null) => Promise<{ mode: 'sent'; incident: Incident } | { mode: 'queued'; localId: string }>;
   cancelPanic: () => void;
@@ -65,6 +87,13 @@ export interface EmergencyContextValue {
   loadIncidents: () => Promise<void>;
   deleteIncident: (id: string) => Promise<void>;
   deleteAllIncidents: () => Promise<void>;
+  loadCommunityAlertsAround: (opts: {
+    latitude: number;
+    longitude: number;
+    radiusMeters?: number;
+    minReports?: number;
+    minutes?: number;
+  }) => Promise<void>;
 }
 
 export interface CreateIncidentData {
@@ -78,7 +107,58 @@ export interface CreateIncidentData {
   clientFlagSpam?: boolean;
 }
 
+function classifyPriorityAndStatus(
+  type: IncidentType,
+  descriptionRaw?: string,
+  explicitPriority?: number,
+): { priorityScore: number; status: IncidentStatus; note?: string } {
+  const basePriority =
+    explicitPriority ??
+    (type === 'fire' || type === 'medical' ? 4 : 3);
+
+  const desc = (descriptionRaw || '').toLowerCase();
+  const isKidnapping =
+    desc.includes('kidnap') ||
+    desc.includes('abduct') ||
+    desc.includes('abduction');
+  const isArmedRobbery =
+    desc.includes('armed robbery') ||
+    (desc.includes('robbery') && (desc.includes('gun') || desc.includes('weapon')));
+  const isFireOutbreak =
+    type === 'fire' ||
+    desc.includes('fire outbreak') ||
+    (desc.includes('fire') && (desc.includes('building') || desc.includes('house') || desc.includes('market')));
+
+  const isCritical = isKidnapping || isArmedRobbery || isFireOutbreak;
+
+  if (isCritical) {
+    return {
+      priorityScore: 5,
+      status: 'critical_alert',
+      note: 'system_flag: critical_escalation',
+    };
+  }
+
+  return {
+    priorityScore: basePriority,
+    status: 'submitted',
+  };
+}
+
 const EmergencyContext = createContext<EmergencyContextValue | null>(null);
+
+export function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.asin(Math.sqrt(a));
+  return R * c;
+}
 
 export function EmergencyProvider({ children }: { children: ReactNode }) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -88,6 +168,7 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>('en');
   const [isLoading, setIsLoading] = useState(false);
   const [offlineIncidents, setOfflineIncidents] = useState<OfflineIncidentItem[]>([]);
+  const [communityAlerts, setCommunityAlerts] = useState<CommunityAlert[]>([]);
   const isProcessingOffline = useRef(false);
   const recentWindowRef = useRef<{ windowStart: number; count: number }>({ windowStart: 0, count: 0 });
   const { user } = useAuth();
@@ -166,20 +247,99 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
     };
   }, [user, loadIncidents]);
 
+  const loadCommunityAlertsAround = useCallback(async (opts: {
+    latitude: number;
+    longitude: number;
+    radiusMeters?: number;
+    minReports?: number;
+    minutes?: number;
+  }) => {
+    const {
+      latitude,
+      longitude,
+      radiusMeters = 1000,
+      minReports = 2,
+      minutes = 60,
+    } = opts;
+
+    try {
+      const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+      const { data, error } = await supabase
+        .from('incidents')
+        .select('*')
+        .gte('createdAt', since);
+
+      if (error) {
+        console.error('Failed to load community incidents:', error);
+        return;
+      }
+
+      const raw = (data as any as Incident[]) || [];
+      const located = raw.filter((i) => i.latitude && i.longitude);
+
+      const groups: CommunityAlert[] = [];
+
+      for (const inc of located) {
+        const lat = parseFloat(String(inc.latitude));
+        const lon = parseFloat(String(inc.longitude));
+        if (Number.isNaN(lat) || Number.isNaN(lon)) continue;
+
+        let group = groups.find(
+          (g) =>
+            g.type === inc.type &&
+            distanceMeters(g.latitude, g.longitude, lat, lon) <= radiusMeters / 2,
+        );
+
+        if (!group) {
+          groups.push({
+            id: inc.id,
+            type: inc.type,
+            description: inc.description,
+            latitude: lat,
+            longitude: lon,
+            address: inc.address,
+            reportCount: 1,
+            radiusMeters,
+            firstReportedAt: inc.createdAt,
+            lastReportedAt: inc.createdAt,
+          });
+        } else {
+          group.reportCount += 1;
+          group.lastReportedAt =
+            inc.createdAt > group.lastReportedAt ? inc.createdAt : group.lastReportedAt;
+        }
+      }
+
+      const filtered = groups.filter((g) => g.reportCount >= minReports);
+      setCommunityAlerts(filtered);
+    } catch (e) {
+      console.error('Failed to compute community alerts:', e);
+    }
+  }, []);
+
   const createIncident = useCallback(async (data: CreateIncidentData): Promise<Incident> => {
     if (!user) {
       throw new Error('Please log in before submitting a report.');
     }
 
+    const classification = classifyPriorityAndStatus(
+      data.type,
+      data.description,
+      data.priorityScore,
+    );
+
     const body: any = {
       type: data.type,
       description: data.description || '',
       isAnonymous: data.isAnonymous ?? true,
-      priorityScore: data.priorityScore ?? 3,
+      priorityScore: classification.priorityScore,
+      status: classification.status,
       timeline: [{
-        status: 'submitted',
+        status: classification.status,
         timestamp: new Date().toISOString(),
         ...(data.clientFlagSpam ? { note: 'client_flag: frequent_reports' } : {}),
+        ...(classification.note ? { note: classification.note } : {}),
       }],
       userId: user.id,
       mediaUrls: [],
@@ -376,6 +536,7 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
     language,
     isLoading,
     offlineIncidents,
+    communityAlerts,
     setLanguage,
     triggerPanic,
     cancelPanic,
@@ -386,9 +547,10 @@ export function EmergencyProvider({ children }: { children: ReactNode }) {
     loadIncidents,
     deleteIncident,
     deleteAllIncidents,
-  }), [incidents, activeIncident, isPanicActive, panicMode, language, isLoading, offlineIncidents,
+    loadCommunityAlertsAround,
+  }), [incidents, activeIncident, isPanicActive, panicMode, language, isLoading, offlineIncidents, communityAlerts,
     setLanguage, triggerPanic, cancelPanic, createIncident, submitIncident, retryOfflineIncident, removeOfflineIncident,
-    loadIncidents, deleteIncident, deleteAllIncidents]);
+    loadIncidents, deleteIncident, deleteAllIncidents, loadCommunityAlertsAround]);
 
   return (
     <EmergencyContext.Provider value={value}>

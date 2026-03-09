@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, FlatList,
-  useColorScheme, Platform, RefreshControl, Alert,
+  Platform, RefreshControl, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -14,10 +14,12 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { Swipeable } from 'react-native-gesture-handler';
 import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
 import { Colors } from '@/constants/colors';
-import { useEmergency, Incident, IncidentType, IncidentStatus } from '@/contexts/EmergencyContext';
+import { useEmergency, Incident, IncidentType, IncidentStatus, LocationData, CommunityAlert, distanceMeters } from '@/contexts/EmergencyContext';
 import type { OfflineIncidentItem } from '@/lib/offlineIncidents';
 import { t } from '@/constants/translations';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const TYPE_CONFIG: Record<IncidentType, { icon: string; color: string }> = {
   police: { icon: 'police-badge', color: '#003580' },
@@ -27,6 +29,7 @@ const TYPE_CONFIG: Record<IncidentType, { icon: string; color: string }> = {
 };
 
 const STATUS_CONFIG: Record<IncidentStatus, { label: string; color: string; icon: string }> = {
+  critical_alert: { label: 'CRITICAL ALERT', color: '#E8001C', icon: 'alert-decagram' },
   submitted: { label: 'Submitted', color: '#FF9F0A', icon: 'clock-outline' },
   received: { label: 'Received', color: '#007AFF', icon: 'check-circle-outline' },
   verified: { label: 'Verified', color: '#30D158', icon: 'shield-check' },
@@ -69,8 +72,7 @@ function IncidentCard({
   onSelect: (incident: Incident) => void;
   isSelected: boolean;
 }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const typeConf = TYPE_CONFIG[incident.type as IncidentType] || TYPE_CONFIG.other;
@@ -192,8 +194,7 @@ function OfflineIncidentCard({
   onRetry: (localId: string) => void;
   onRemove: (localId: string) => void;
 }) {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
 
   const statusLabel =
     item.status === 'queued' ? 'Queued' :
@@ -268,17 +269,124 @@ function OfflineIncidentCard({
 }
 
 export default function HistoryScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { incidents, offlineIncidents, retryOfflineIncident, removeOfflineIncident, isLoading, loadIncidents, deleteIncident, language } = useEmergency();
+  const {
+    incidents,
+    offlineIncidents,
+    retryOfflineIncident,
+    removeOfflineIncident,
+    isLoading,
+    loadIncidents,
+    deleteIncident,
+    language,
+    communityAlerts,
+    loadCommunityAlertsAround,
+  } = useEmergency();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [location, setLocation] = useState<LocationData | null>(null);
+  const [locationText, setLocationText] = useState('Acquiring location...');
+  const [nearbyAlert, setNearbyAlert] = useState<CommunityAlert | null>(null);
 
   useEffect(() => {
     loadIncidents();
   }, [loadIncidents]);
+
+  useEffect(() => {
+    let watcher: Location.LocationSubscription | null = null;
+
+    const startWatcher = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationText('Location permission denied');
+          return;
+        }
+
+        watcher = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 50,
+            timeInterval: 15000,
+          },
+          async (loc) => {
+            try {
+              const [place] = await Location.reverseGeocodeAsync({
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+              });
+
+              const parts = [
+                place?.name,
+                place?.street,
+                place?.subregion,
+                place?.city || place?.district,
+                place?.region,
+                place?.country,
+              ].filter(Boolean);
+
+              const prettyAddress = parts.join(', ');
+
+              const locationData: LocationData = {
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+                accuracy: Math.round(loc.coords.accuracy || 0),
+                provider: 'GPS',
+                timestamp: new Date(loc.timestamp).toISOString(),
+                timestampUTC: new Date(loc.timestamp).toUTCString(),
+                humanReadable: prettyAddress || `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`,
+              };
+
+              setLocation(locationData);
+              setLocationText(locationData.humanReadable);
+
+              await loadCommunityAlertsAround({
+                latitude: locationData.latitude,
+                longitude: locationData.longitude,
+                radiusMeters: 1500,
+                minReports: 2,
+                minutes: 60,
+              });
+            } catch {
+              setLocationText('Location unavailable');
+            }
+          },
+        );
+      } catch {
+        setLocationText('Location unavailable');
+      }
+    };
+
+    startWatcher();
+
+    return () => {
+      if (watcher) {
+        watcher.remove();
+        watcher = null;
+      }
+    };
+  }, [loadCommunityAlertsAround]);
+
+  useEffect(() => {
+    if (!location || communityAlerts.length === 0) {
+      setNearbyAlert(null);
+      return;
+    }
+
+    const radius = 1500;
+
+    const nearest = communityAlerts
+      .map((g) => ({
+        group: g,
+        dist: distanceMeters(location.latitude, location.longitude, g.latitude, g.longitude),
+      }))
+      .filter((x) => x.dist <= radius)
+      .sort((a, b) => a.dist - b.dist)[0];
+
+    setNearbyAlert(nearest ? nearest.group : null);
+  }, [location, communityAlerts]);
 
   // Clear selected incident if it no longer exists (e.g. deleted or reloaded)
   useEffect(() => {
@@ -355,6 +463,44 @@ export default function HistoryScreen() {
           </Pressable>
         )}
       </View>
+
+      {nearbyAlert && (
+        <View style={[styles.alertBanner, { backgroundColor: '#FFF4E5', borderColor: '#FF9F0A' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <MaterialCommunityIcons name="alert" size={18} color="#E67E22" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.alertTitle, { color: C.text, fontFamily: 'Rubik_700Bold' }]}>
+                ⚠ Warning: {(nearbyAlert.type || 'other').charAt(0).toUpperCase() + (nearbyAlert.type || 'other').slice(1)} reported nearby
+              </Text>
+              <Text style={[styles.alertSub, { color: C.textSecondary, fontFamily: 'Rubik_400Regular' }]}>
+                {nearbyAlert.address || locationText}. Multiple reports in this area. Avoid if possible.
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => {
+              setSelectedIncident((prev) => {
+                const base = prev ?? incidents[0] ?? null;
+                if (!base) return prev;
+                return {
+                  ...base,
+                  id: nearbyAlert.id,
+                  latitude: String(nearbyAlert.latitude),
+                  longitude: String(nearbyAlert.longitude),
+                  address: nearbyAlert.address,
+                };
+              });
+            }}
+            style={styles.alertBtn}
+            accessibilityRole="button"
+            accessibilityLabel="View alert on map"
+          >
+            <Text style={[styles.alertBtnText, { fontFamily: 'Rubik_600SemiBold' }]}>
+              View alert zone
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       {selectedIncident && selectedIncident.latitude && selectedIncident.longitude && (
         <View style={styles.mapWrapper}>
@@ -439,6 +585,32 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 16 },
   headerTitle: { fontSize: 28, letterSpacing: -0.5 },
   headerSub: { fontSize: 13, marginTop: 4 },
+  alertBanner: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  alertTitle: {
+    fontSize: 13,
+  },
+  alertSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  alertBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#FF9F0A',
+  },
+  alertBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+  },
   mapWrapper: {
     marginHorizontal: 20,
     marginBottom: 8,

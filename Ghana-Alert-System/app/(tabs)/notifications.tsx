@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  useColorScheme,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +11,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { useEmergency, IncidentStatus } from '@/contexts/EmergencyContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type NotificationItem = {
   id: string;
@@ -35,8 +35,7 @@ function formatDate(iso: string): string {
 }
 
 export default function NotificationsScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const { incidents } = useEmergency();

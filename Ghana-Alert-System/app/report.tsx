@@ -1,12 +1,19 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, TextInput,
-  useColorScheme, Platform, Image, Alert, Linking,
+  Platform, Image, Alert, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  withRepeat,
+  interpolateColor,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,6 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useEmergency, IncidentType, LocationData } from '@/contexts/EmergencyContext';
 import { t } from '@/constants/translations';
 import { getFirstAidAdvice, buildFirstAidSpeech } from '@/lib/firstAid';
+import { useTheme } from '@/contexts/ThemeContext';
 
 type IncidentConfig = {
   label: string;
@@ -47,7 +55,7 @@ const POLICE_CASES: PoliceCase[] = [
   { label: 'Kidnapping / missing person', icon: 'account-search', keywords: ['kidnap', 'missing', 'abduction'] },
   { label: 'Sexual offence', icon: 'alert-octagon', keywords: ['sexual', 'rape', 'harassment'] },
   { label: 'Fraud / cybercrime', icon: 'shield-bug', keywords: ['fraud', 'scam', 'cyber', 'online'] },
-  { label: 'Traffic accident', icon: 'car-crash', keywords: ['traffic', 'accident', 'crash', 'vehicle'] },
+  { label: 'Traffic accident', icon: 'car-emergency', keywords: ['traffic', 'accident', 'crash', 'vehicle'] },
   { label: 'Other police case', icon: 'shield-account', keywords: ['other'] },
 ];
 
@@ -63,13 +71,55 @@ function formatTimestamp(date: Date): string {
 function TypePill({ typeKey, val, selected, onSelect }: {
   typeKey: string; val: IncidentConfig; selected: boolean; onSelect: (k: string) => void;
 }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const tapScale = useSharedValue(1);
+  const focus = useSharedValue(selected ? 1 : 0);
+  const pulse = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    focus.value = withTiming(selected ? 1 : 0, { duration: 260 });
+    if (selected) {
+      pulse.value = withRepeat(withTiming(1, { duration: 1400 }), -1, true);
+    } else {
+      pulse.value = withTiming(0, { duration: 180 });
+    }
+  }, [selected, focus, pulse]);
+
+  const tapStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: tapScale.value }],
+  }));
+
+  const cinematicStyle = useAnimatedStyle(() => {
+    const cardBg = interpolateColor(
+      focus.value,
+      [0, 1],
+      ['rgba(0,0,0,0)', val.bg],
+    );
+    return {
+      backgroundColor: cardBg,
+      shadowColor: val.color,
+      shadowOpacity: 0.18 * focus.value,
+      shadowRadius: 14 * focus.value,
+      elevation: 4 * focus.value,
+      transform: [{ translateY: -2 * focus.value }],
+    };
+  });
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: pulse.value * 0.6,
+    transform: [{ scale: 1 + pulse.value * 0.5 }],
+  }));
+
   return (
-    <Animated.View style={[styles.typePill, animStyle]}>
+    <Animated.View style={[styles.typePill, cinematicStyle, tapStyle]}>
+      <Animated.View style={[styles.typePillPulse, pulseStyle]} />
       <Pressable
-        onPressIn={() => { scale.value = withSpring(0.92); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-        onPressOut={() => { scale.value = withSpring(1); }}
+        onPressIn={() => {
+          tapScale.value = withSpring(0.94);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }}
+        onPressOut={() => {
+          tapScale.value = withSpring(1, { damping: 12, stiffness: 220 });
+        }}
         onPress={() => onSelect(typeKey)}
         style={[
           styles.typePillInner,
@@ -100,8 +150,7 @@ function TypeSelector({ selected, onSelect, C }: {
 }
 
 export default function ReportScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { isDark, colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const { type: paramType } = useLocalSearchParams<{ type: string }>();
   const { submitIncident, language } = useEmergency();
@@ -1090,7 +1139,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  typePill: {},
+  typePill: {
+    borderRadius: 22,
+    overflow: 'visible',
+  },
+  typePillPulse: {
+    position: 'absolute',
+    top: -4,
+    bottom: -4,
+    left: -4,
+    right: -4,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
   typePillInner: {
     flexDirection: 'row',
     alignItems: 'center',

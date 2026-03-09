@@ -3,6 +3,18 @@ import { pgTable, text, varchar, boolean, integer, timestamp, decimal, jsonb } f
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
+function normalizeSpaces(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function sanitizePhone(value: string): string {
+  return value.replace(/[^\d+]/g, "");
+}
+
+function sanitizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 export const NATIONAL_ID_TYPES = [
   'ghana_card',
   'nhis',
@@ -49,28 +61,48 @@ export const incidents = pgTable("incidents", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
+const baseInsertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
   createdAt: true,
   updatedAt: true,
-}).extend({
+});
+
+export const insertUserSchema = baseInsertUserSchema.extend({
   password: z.string().min(6, "Password must be at least 6 characters"),
   nationalIdType: z.enum(NATIONAL_ID_TYPES, { errorMap: () => ({ message: "Invalid ID type" }) }),
   phone: z.string().min(10, "Phone number must be at least 10 digits"),
   fullName: z.string().min(2, "Full name required"),
+}).transform((data) => {
+  return {
+    ...data,
+    fullName: normalizeSpaces(data.fullName),
+    phone: sanitizePhone(data.phone),
+    email: data.email ? sanitizeEmail(data.email) : null,
+    nationalIdNumber: data.nationalIdNumber.trim().toUpperCase(),
+  };
 });
 
 export const loginSchema = z.object({
-  phone: z.string().min(10),
+  phone: z.string().min(10).transform(sanitizePhone),
   password: z.string().min(1),
 });
 
-export const insertIncidentSchema = createInsertSchema(incidents).omit({
+const baseInsertIncidentSchema = createInsertSchema(incidents).omit({
   id: true,
   userId: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertIncidentSchema = baseInsertIncidentSchema.transform((data) => {
+  return {
+    ...data,
+    type: data.type.trim().toLowerCase(),
+    description: data.description ? data.description.trim() : null,
+    gpsProvider: data.gpsProvider ? data.gpsProvider.trim() : null,
+    address: data.address ? data.address.trim() : null,
+  };
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

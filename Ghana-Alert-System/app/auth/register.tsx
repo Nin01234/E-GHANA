@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, TextInput,
-  useColorScheme, Platform, ScrollView, Alert, KeyboardAvoidingView, Image,
+  Platform, ScrollView, Alert, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@/constants/colors';
 import { useAuth, NationalIdType } from '@/contexts/AuthContext';
 import { useEmergency } from '@/contexts/EmergencyContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const ID_TYPES: { value: NationalIdType; label: string; icon: string; placeholder: string }[] = [
   { value: 'ghana_card', label: 'Ghana Card (NIA)', icon: 'card-account-details', placeholder: 'GHA-XXXXXXXXX-X' },
@@ -22,8 +23,7 @@ const ID_TYPES: { value: NationalIdType; label: string; icon: string; placeholde
 ];
 
 export default function RegisterScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const { register } = useAuth();
   const { loadIncidents } = useEmergency();

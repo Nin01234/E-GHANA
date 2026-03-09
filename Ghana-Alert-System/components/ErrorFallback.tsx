@@ -7,7 +7,6 @@ import {
   ScrollView,
   Text,
   Modal,
-  useColorScheme,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +18,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 import { Feather } from "@expo/vector-icons";
 import { Colors } from "@/constants/colors";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -28,10 +28,8 @@ export type ErrorFallbackProps = {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { isDark, colors: C } = useTheme();
   const insets = useSafeAreaInsets();
-  const C = isDark ? Colors.dark : Colors.light;
 
   const theme = {
     background: C.background,

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView,
-  useColorScheme, Platform,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -11,6 +11,7 @@ import * as Speech from 'expo-speech';
 import { Colors } from '@/constants/colors';
 import { useEmergency, IncidentType, IncidentStatus } from '@/contexts/EmergencyContext';
 import { getFirstAidAdvice, buildFirstAidSpeech } from '@/lib/firstAid';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const TYPE_CONFIG: Record<IncidentType, { icon: string; color: string; label: string; gradient: [string, string] }> = {
   police: { icon: 'police-badge', color: '#003580', label: 'Police Emergency', gradient: ['#001F5C', '#003580'] },
@@ -20,10 +21,18 @@ const TYPE_CONFIG: Record<IncidentType, { icon: string; color: string; label: st
 };
 
 const STATUS_STEPS: IncidentStatus[] = [
-  'submitted', 'received', 'verified', 'dispatched', 'enroute', 'onscene', 'resolved'
+  'critical_alert',
+  'submitted',
+  'received',
+  'verified',
+  'dispatched',
+  'enroute',
+  'onscene',
+  'resolved',
 ];
 
 const STATUS_CONFIG: Record<IncidentStatus, { label: string; icon: string }> = {
+  critical_alert: { label: 'CRITICAL ALERT', icon: 'alert-decagram' },
   submitted: { label: 'Submitted', icon: 'clock-outline' },
   received: { label: 'Received', icon: 'check-circle-outline' },
   verified: { label: 'Verified', icon: 'shield-check' },
@@ -43,8 +52,7 @@ function formatDate(iso: string): string {
 }
 
 export default function IncidentDetailScreen() {
-  const isDark = useColorScheme() === 'dark';
-  const C = isDark ? Colors.dark : Colors.light;
+  const { colors: C } = useTheme();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { incidents, language } = useEmergency();
