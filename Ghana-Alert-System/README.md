@@ -1,3 +1,4 @@
+the mobile app
  # E-GHANA – Emergency Alert System
 
 E-GHANA is a mobile-first emergency alert system for Ghana built with **Expo**, **React Native**, **Expo Router**, and **Supabase**.  
